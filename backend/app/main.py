@@ -1,24 +1,8 @@
-from fastapi import FastAPI
+# Kept for backwards compatibility: the real entry point is backend/main.py
+# (run with:  uvicorn main:app --reload   from inside the backend/ folder)
+import os
+import sys
 
-from app.api.routes import router
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-
-app = FastAPI(
-    title="Aqua_XAI API",
-    description="Explainable AI Based Water Quality Prediction System",
-    version="1.0"
-)
-
-
-app.include_router(
-    router,
-    prefix="/api"
-)
-
-
-@app.get("/")
-def home():
-
-    return {
-        "message": "Aqua_XAI API is running"
-    }
+from main import app  # noqa: E402,F401

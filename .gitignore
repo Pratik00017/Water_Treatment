@@ -1,19 +1,15 @@
-# Python
+node_modules/
+dist/
 __pycache__/
 *.pyc
-
-# Environment
-.env
-backend/.env
-
-# Virtual environment
 .venv/
+venv/
 
-# ML trained models
-backend/app/ml/models/*.pkl
+.env
+.env.*
+!.env.example
 
-# Accidentally duplicated backend directory
-backend/app/ml/backend/
+backend/aquaxai.db
+frontend/.env
 
-# Logs
-*.log
+dataset/Combined_dataset.csv

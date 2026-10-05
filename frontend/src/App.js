@@ -1,12 +1,3 @@
-﻿import React from 'react';
-
-function App() {
-  return (
-    <div style={{ padding: '40px', fontFamily: 'sans-serif', textAlign: 'center' }}>
-      <h1>Aqua_XAI: Real-Time Water Quality Monitoring & XAI</h1>
-      <p>Maharashtra Pollution Control Board (MPCB) Dashboard</p>
-    </div>
-  );
-}
-
-export default App;
+import React from 'react';import{BrowserRouter,Navigate,Route,Routes}from'react-router-dom';import{AuthProvider,useAuth}from'./context/AuthContext';import PageContainer from'./components/layout/PageContainer';import Login from'./pages/Login';import Signup from'./pages/Signup';import ForgotPassword from'./pages/ForgotPassword';import Dashboard from'./pages/Dashboard';import AnalyzeWater from'./pages/AnalyzeWater';import AnalysisResult from'./pages/AnalysisResult';import Comparison from'./pages/Comparison';import AquaAssistant from'./pages/AquaAssistant';import History from'./pages/History';import Reports from'./pages/Reports';import Profile from'./pages/Profile';import Settings from'./pages/Settings';import'./styles.css';
+function Protected({children}){const{isAuthenticated}=useAuth();return isAuthenticated?children:<Navigate to="/login" replace/>}
+function App(){return <BrowserRouter><AuthProvider><Routes><Route path="/login" element={<Login/>}/><Route path="/signup" element={<Signup/>}/><Route path="/forgot-password" element={<ForgotPassword/>}/><Route element={<Protected><PageContainer/></Protected>}><Route path="/dashboard" element={<Dashboard/>}/><Route path="/analyze" element={<AnalyzeWater/>}/><Route path="/analysis-result" element={<AnalysisResult/>}/><Route path="/comparison" element={<Comparison/>}/><Route path="/assistant" element={<AquaAssistant/>}/><Route path="/history" element={<History/>}/><Route path="/reports" element={<Reports/>}/><Route path="/profile" element={<Profile/>}/><Route path="/settings" element={<Settings/>}/></Route><Route path="*" element={<Navigate to="/login" replace/>}/></Routes></AuthProvider></BrowserRouter>};export default App;

@@ -2,7 +2,7 @@ import pandas as pd
 import os
 
 
-DATA_PATH = r"D:\Aqua_XAI\dataset\Combined_dataset.csv"
+DATA_PATH = "/app/dataset/Combined_dataset.csv"
 
 
 def load_dataset():
@@ -16,7 +16,8 @@ def load_dataset():
 
     df = pd.read_csv(
         DATA_PATH,
-        low_memory=False
+        low_memory=False,
+        nrows=200000
     )
 
     print("\nDataset Loaded Successfully")

@@ -1,6 +1,5 @@
-﻿version: '3.8'
+﻿services:
 
-services:
   ollama:
     image: ollama/ollama:latest
     container_name: aqua_ollama
@@ -14,28 +13,48 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+
     container_name: aqua_backend
+
     ports:
       - "8000:8000"
+
     environment:
-      - OLLAMA_HOST=http://ollama:11434
+      OLLAMA_HOST: http://ollama:11434
+
+      MYSQL_HOST: host.docker.internal
+      MYSQL_PORT: 3306
+      MYSQL_USER: aquaxai_user
+      MYSQL_PASSWORD: AD21
+      MYSQL_DATABASE: aquaxai
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
     volumes:
-      - ./backend/chroma_db:/app/chroma_db
-      - ./backend/ml/models:/app/ml/models
+      - ./backend/app/ml/models:/app/app/ml/models
+      - ./dataset:/app/dataset
+
     depends_on:
       - ollama
+
     restart: always
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+
     container_name: aqua_frontend
+
     ports:
       - "80:80"
+
     depends_on:
       - backend
+
     restart: always
+
 
 volumes:
   ollama_storage:

@@ -5,10 +5,12 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from app.database.connection import SessionLocal, engine, Base
 from app.models.water_models import Treatment
 
-Base.metadata.create_all(bind=engine)
-
-def seed_treatments():
+def seed_treatments(force=False):
+    Base.metadata.create_all(bind=engine)
     db = SessionLocal()
+    if not force and db.query(Treatment).count() > 0:
+        db.close()
+        return
     
     treatments = [
         # === pH TREATMENTS ===
@@ -108,4 +110,4 @@ def seed_treatments():
     print("Database successfully seeded with comprehensive treatment data!")
 
 if __name__ == "__main__":
-    seed_treatments()
+    seed_treatments(force=True)

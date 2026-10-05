@@ -65,9 +65,8 @@ def preprocess_data(df):
     # -------------------------
 
     categorical_columns = X.select_dtypes(
-    include=["object", "str", "category"]
-    ).columns
-
+    include=["object", "category"]
+).columns
 
     encoders = {}
 

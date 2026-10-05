@@ -14,19 +14,26 @@ def train_models():
 
     start_time = time.time()
 
-    # -------------------------
-    # Load Dataset
-    # -------------------------
+    print("\nLoading dataset...")
 
     df = load_dataset()
 
+    print("\nOriginal dataset:", df.shape)
+
+    # Use a manageable sample for training
+    if len(df) > 200000:
+        df = df.sample(
+            n=200000,
+            random_state=42
+        ).reset_index(drop=True)
+
+    print("Training dataset:", df.shape)
 
     # -------------------------
-    # Preprocess Dataset
+    # Preprocess
     # -------------------------
 
     X, y, encoders, target_encoder, imputer = preprocess_data(df)
-
 
     # -------------------------
     # Train Test Split
@@ -42,10 +49,8 @@ def train_models():
         stratify=y
     )
 
-
     print("Training samples:", X_train.shape)
     print("Testing samples:", X_test.shape)
-
 
     # -------------------------
     # Random Forest
@@ -56,7 +61,7 @@ def train_models():
     rf_model = RandomForestClassifier(
         n_estimators=100,
         max_depth=20,
-        n_jobs=-1,
+        n_jobs=2,
         random_state=42
     )
 
@@ -65,11 +70,7 @@ def train_models():
         y_train
     )
 
-
-    rf_prediction = rf_model.predict(
-        X_test
-    )
-
+    rf_prediction = rf_model.predict(X_test)
 
     rf_accuracy = accuracy_score(
         y_test,
@@ -82,12 +83,10 @@ def train_models():
         average="weighted"
     )
 
-
     print("\nRandom Forest Results")
     print("---------------------")
     print("Accuracy:", rf_accuracy)
     print("F1 Score:", rf_f1)
-
 
     # -------------------------
     # XGBoost
@@ -96,31 +95,25 @@ def train_models():
     print("\nTraining XGBoost...")
 
     xgb_model = XGBClassifier(
-        n_estimators=200,
-        max_depth=8,
+        n_estimators=100,
+        max_depth=6,
         learning_rate=0.1,
         tree_method="hist",
-        n_jobs=-1,
+        n_jobs=2,
         random_state=42
     )
-
 
     xgb_model.fit(
         X_train,
         y_train
     )
 
-
-    xgb_prediction = xgb_model.predict(
-        X_test
-    )
-
+    xgb_prediction = xgb_model.predict(X_test)
 
     xgb_accuracy = accuracy_score(
         y_test,
         xgb_prediction
     )
-
 
     xgb_f1 = f1_score(
         y_test,
@@ -128,14 +121,13 @@ def train_models():
         average="weighted"
     )
 
-
     print("\nXGBoost Results")
     print("----------------")
     print("Accuracy:", xgb_accuracy)
     print("F1 Score:", xgb_f1)
 
-
     print("\nClassification Report:")
+
     print(
         classification_report(
             y_test,
@@ -144,24 +136,21 @@ def train_models():
         )
     )
 
-
     total_time = (time.time() - start_time) / 60
 
     print(
         f"\nTotal Training Time: {total_time:.2f} minutes"
     )
 
-
     return (
-    rf_model,
-    xgb_model,
-    encoders,
-    target_encoder,
-    imputer,
-    X.columns
-)
+        rf_model,
+        xgb_model,
+        encoders,
+        target_encoder,
+        imputer,
+        X.columns
+    )
 
 
 if __name__ == "__main__":
-
     train_models()

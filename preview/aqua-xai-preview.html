@@ -1,0 +1,1347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<title>Aqua XAI — Preview</title>
+<style>
+:root {
+  color-scheme: light;
+  --navy-950:#0B1B2B; --navy-900:#0F2237; --navy-800:#14283D; --navy-700:#1B3550;
+  --aqua-500:#4FA8A0; --aqua-600:#3E8B85;
+  --blue-500:#2D6E9E; --blue-600:#255D86;
+  --sand-50:#F6F5F1; --sand-100:#EFEDE6;
+  --ok-600:#3F8F5F; --ok-50:#EAF4EC;
+  --warn-600:#B07A22; --warn-50:#FBF2E2;
+  --danger-600:#B14B3F; --danger-50:#FBECEA;
+  --page-bg:var(--sand-50); --ink:var(--navy-950);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --page-bg:#0B1B2B; --ink:#F6F5F1; }
+}
+:root[data-theme="dark"] { --page-bg:#0B1B2B; --ink:#F6F5F1; }
+html,body{height:100%;}
+body{
+  background:var(--page-bg); color:var(--ink);
+  font-family:'Inter',system-ui,sans-serif;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+.font-mono{font-family:'IBM Plex Mono',ui-monospace,monospace;}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{
+  outline:2px solid var(--blue-500); outline-offset:2px;
+}
+.panel{background:#fff;border:1px solid rgba(11,27,43,0.1);border-radius:12px;box-shadow:0 1px 2px rgba(11,27,43,0.06);}
+.field-input{width:100%;border-radius:8px;border:1px solid rgba(11,27,43,0.15);background:#fff;padding:8px 12px;font-size:14px;color:var(--navy-950);}
+.field-input:focus{border-color:var(--blue-500);box-shadow:0 0 0 1px var(--blue-500);outline:none;}
+.field-label{display:block;font-size:13px;color:rgba(20,40,61,0.7);margin-bottom:4px;}
+.btn-primary{display:inline-flex;align-items:center;gap:8px;border-radius:8px;background:var(--blue-500);color:#fff;font-size:14px;font-weight:500;padding:8px 16px;transition:background .15s;}
+.btn-primary:hover{background:var(--blue-600);}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;}
+.btn-secondary{display:inline-flex;align-items:center;gap:8px;border-radius:8px;border:1px solid rgba(11,27,43,0.15);background:#fff;color:var(--navy-950);font-size:14px;font-weight:500;padding:8px 16px;transition:background .15s;}
+.btn-secondary:hover{background:var(--sand-100);}
+.btn-ghost{display:inline-flex;align-items:center;gap:6px;border-radius:8px;color:rgba(11,27,43,0.7);font-size:14px;font-weight:500;padding:6px 12px;}
+.btn-ghost:hover{background:rgba(11,27,43,0.05);}
+.badge{display:inline-flex;align-items:center;gap:6px;border-radius:6px;font-weight:500;padding:4px 10px;font-size:13px;}
+.badge-ok{background:var(--ok-50);color:var(--ok-600);}
+.badge-warn{background:var(--warn-50);color:var(--warn-600);}
+.badge-danger{background:var(--danger-50);color:var(--danger-600);}
+.sidebar-link{display:flex;align-items:center;gap:10px;border-radius:8px;padding:9px 12px;font-size:14px;color:rgba(246,245,241,0.65);transition:background .15s;}
+.sidebar-link:hover{background:rgba(255,255,255,0.05);color:#F6F5F1;}
+.sidebar-link.active{background:rgba(255,255,255,0.1);color:#fff;font-weight:500;}
+.mobile-link{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:rgba(246,245,241,0.55);padding:6px 10px;}
+.mobile-link.active{color:var(--aqua-500);}
+</style>
+</head>
+<body>
+<h2 class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;">Aqua XAI water quality analysis app preview</h2>
+
+<div id="toast-root"></div>
+<div id="modal-root"></div>
+<div id="app"></div>
+
+<script>
+/* ---------------- data layer (localStorage, per-viewer only) ---------------- */
+const LS = {
+  get(k, fallback){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback; }catch(e){ return fallback; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+function uid(){ return 'id-' + Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
+
+function getUsers(){ return LS.get('aqua_users', []); }
+function setUsers(u){ LS.set('aqua_users', u); }
+function getSession(){ return LS.get('aqua_session', null); }
+function setSession(s){ LS.set('aqua_session', s); }
+function getHistory(userId){ return LS.get('aqua_history_'+userId, []); }
+function setHistory(userId, h){ LS.set('aqua_history_'+userId, h); }
+
+/* ---------------- domain constants (match the real trained model) ---------------- */
+const COUNTRIES = ["Canada","China","England","India","Ireland","USA"];
+const WQI_DEFINITIONS = {
+  Excellent: { range:'95% \u2013 100%', definition:'Conditions are very close to natural or pristine levels; virtually no threat.' },
+  Good:      { range:'80% \u2013 94%',  definition:'Conditions rarely depart from natural or desirable levels; minor threat.' },
+  Fair:      { range:'65% \u2013 79%',  definition:'Conditions sometimes depart from desirable levels; occasional threat.' },
+  Marginal:  { range:'45% \u2013 64%',  definition:'Conditions frequently depart from desirable levels; frequent threat.' },
+  Poor:      { range:'0% \u2013 44%',   definition:'Conditions usually depart from desirable levels; highly polluted and impaired.' }
+};
+const WQI_ORDER = ['Excellent','Good','Fair','Marginal','Poor'];
+function classifyWqi(score){
+  if (score >= 95) return 'Excellent';
+  if (score >= 80) return 'Good';
+  if (score >= 65) return 'Fair';
+  if (score >= 45) return 'Marginal';
+  return 'Poor';
+}
+const WATERBODIES = ["Bay","Canal","Coastal","Drainage","Effluent","Estuarine","Lake","Marine","River","Sea Water","Sewage","Transitional"];
+const NUMERIC_FIELDS = [
+  {key:'ph', label:'pH', unit:'pH units', info:'How acidic or alkaline the water is, on a 0–14 scale.', min:0, max:14, step:0.1, group:'Basic', weight:0, baseline:7},
+  {key:'temperature', label:'Temperature', unit:'°C', info:'Water temperature. Affects how much oxygen the water can hold.', min:-5, max:45, step:0.1, group:'Basic', weight:-0.02, baseline:15},
+  {key:'dissolvedOxygen', label:'Dissolved oxygen', unit:'mg/L', info:'Oxygen available for aquatic life. Low levels stress ecosystems.', min:0, max:20, step:0.1, group:'Basic', weight:0.9, baseline:8},
+  {key:'bod', label:'Biochemical oxygen demand', unit:'mg/L', info:'Oxygen microorganisms use breaking down organic matter. High BOD suggests pollution.', min:0, max:50, step:0.1, group:'Chemical', weight:-0.55, baseline:2},
+  {key:'ammonia', label:'Ammonia', unit:'mg/L', info:'Can indicate pollution from agricultural runoff or waste.', min:0, max:10, step:0.01, group:'Chemical', weight:-2.2, baseline:0.1},
+  {key:'orthophosphate', label:'Orthophosphate', unit:'mg/L', info:'A form of phosphorus linked to nutrient pollution and algal blooms.', min:0, max:10, step:0.01, group:'Chemical', weight:-1.4, baseline:0.1},
+  {key:'nitrogen', label:'Nitrogen', unit:'mg/L', info:'Total nitrogen. Excess levels contribute to eutrophication.', min:0, max:20, step:0.01, group:'Chemical', weight:-0.45, baseline:1},
+  {key:'nitrate', label:'Nitrate', unit:'mg/L', info:'A nitrogen compound typically from fertilizer or waste runoff.', min:0, max:20, step:0.01, group:'Chemical', weight:-0.35, baseline:1},
+];
+const SAMPLE_PROFILES = [
+  {id:'clean-river', label:'Clean river sample', values:{country:'Canada', waterbodyType:'River', ammonia:0.04, bod:1.2, dissolvedOxygen:9.1, orthophosphate:0.02, ph:7.3, temperature:12.5, nitrogen:0.6, nitrate:0.4, year:2025, month:5}},
+  {id:'urban-estuary', label:'Urban estuary sample', values:{country:'England', waterbodyType:'Estuarine', ammonia:0.35, bod:3.8, dissolvedOxygen:6.0, orthophosphate:0.45, ph:7.6, temperature:16.0, nitrogen:2.4, nitrate:3.1, year:2025, month:8}},
+  {id:'industrial-drainage', label:'Industrial drainage sample', values:{country:'China', waterbodyType:'Drainage', ammonia:1.8, bod:9.5, dissolvedOxygen:2.4, orthophosphate:1.2, ph:6.1, temperature:21.0, nitrogen:6.8, nitrate:5.9, year:2025, month:7}},
+  {id:'coastal-water', label:'Coastal water sample', values:{country:'Ireland', waterbodyType:'Coastal', ammonia:0.12, bod:2.0, dissolvedOxygen:7.8, orthophosphate:0.10, ph:8.0, temperature:9.5, nitrogen:1.1, nitrate:0.9, year:2025, month:2}},
+  {id:'india-river', label:'India river sample', values:{country:'India', waterbodyType:'River', ammonia:0.6, bod:4.5, dissolvedOxygen:5.2, orthophosphate:0.5, ph:7.0, temperature:26.0, nitrogen:2.8, nitrate:2.2, year:2025, month:6}},
+];
+const STATUS_META = {
+  Excellent:{tone:'ok', symbol:'\u2713'}, Good:{tone:'ok', symbol:'\u2713'},
+  Fair:{tone:'warn', symbol:'\u26A0'}, Marginal:{tone:'warn', symbol:'\u26A0'},
+  Poor:{tone:'danger', symbol:'\u2715'}
+};
+const EMPTY_FORM = { country:'', waterbodyType:'', ph:'', temperature:'', dissolvedOxygen:'', bod:'', ammonia:'', orthophosphate:'', nitrogen:'', nitrate:'', year:new Date().getFullYear(), month:new Date().getMonth()+1 };
+
+/* ---------------- simulated model (clearly a stand-in, not the real trained model) ---------------- */
+function simulatePrediction(form){
+  let qualityScore = 0;
+  const contributions = [];
+  const phDeviation = Math.abs(Number(form.ph) - 7);
+  const phContribution = -(phDeviation * 0.35);
+  qualityScore += phContribution;
+  contributions.push({feature:'pH', value:form.ph, contribution:round3(phContribution)});
+  NUMERIC_FIELDS.filter(f=>f.key!=='ph').forEach(f=>{
+    const v = Number(form[f.key]);
+    const c = f.weight * (v - f.baseline) * 0.4;
+    qualityScore += c;
+    contributions.push({feature:f.label, value:v, contribution:round3(c)});
+  });
+  contributions.forEach(c=>{ c.impact = c.contribution >= 0 ? 'positive' : 'negative'; });
+  contributions.sort((a,b)=>Math.abs(b.contribution)-Math.abs(a.contribution));
+
+  // Map the internal quality score onto a 0-100 WQI score, then classify
+  // using the EXACT bands from the uploaded WQI reference table
+  // (Excellent 95-100, Good 80-94, Fair 65-79, Marginal 45-64, Poor 0-44).
+  const wqiScore = Math.max(0, Math.min(100, Math.round(50 + qualityScore * 20)));
+  const waterQuality = classifyWqi(wqiScore);
+
+  return { result:{ water_quality: waterQuality, confidence: wqiScore }, contributions };
+}
+function round3(n){ return Math.round(n*1000)/1000; }
+
+/* ---------------- treatment recommendation (derived from the prediction's own top factors) ---------------- */
+const TREATMENT_MAP = {
+  'Ammonia': {primary:'Breakpoint chlorination or ion exchange', additional:'Activated carbon polishing'},
+  'Biochemical oxygen demand': {primary:'Aeration with biological treatment', additional:'Settling and filtration'},
+  'Dissolved oxygen': {primary:'Mechanical aeration', additional:'Reduce organic loading upstream'},
+  'Orthophosphate': {primary:'Coagulation and filtration', additional:'Phosphorus-selective media'},
+  'Nitrogen': {primary:'Biological denitrification', additional:'Ion exchange'},
+  'Nitrate': {primary:'Biological denitrification', additional:'Ion exchange'},
+  'pH': {primary:'pH neutralization/correction', additional:'Re-test after dosing'},
+  'Temperature': {primary:'No treatment applicable (natural factor)', additional:'Monitor seasonal trend'},
+  'Waterbody type': {primary:'No treatment applicable', additional:'—'},
+  'Country': {primary:'No treatment applicable', additional:'—'},
+};
+function recommendTreatment(result, contributions){
+  const negatives = contributions.filter(c=>c.impact==='negative').sort((a,b)=>a.contribution-b.contribution);
+  const status = result.water_quality;
+
+  if (status==='Excellent' || status==='Good'){
+    const top = contributions[0];
+    return {
+      statusRequired: false,
+      primary: 'No major treatment required',
+      additional: 'Routine monitoring',
+      reasonFeatures: top ? [top] : [],
+      reason: top ? (top.feature+' and the other sampled parameters are within a favorable range.') : 'Sampled parameters are within a favorable range.',
+      expectedImprovement: 'Maintain current conditions with periodic re-testing.'
+    };
+  }
+
+  const primaryDriver = negatives[0];
+  const secondaryDriver = negatives.find(n => primaryDriver && n.feature !== primaryDriver.feature);
+  const primaryTx = primaryDriver ? (TREATMENT_MAP[primaryDriver.feature] || {primary:'General filtration', additional:'—'}) : {primary:'Basic filtration', additional:'—'};
+  const secondaryTx = secondaryDriver ? (TREATMENT_MAP[secondaryDriver.feature] || null) : null;
+
+  const reasonFeatures = [primaryDriver, secondaryDriver].filter(Boolean);
+  const reasonText = reasonFeatures.length
+    ? reasonFeatures.map(f=>f.feature.toLowerCase()+' ('+f.value+')').join(' and ')+' pushed this sample toward a worse result.'
+    : 'Several sampled parameters were outside a favorable range.';
+
+  return {
+    statusRequired: status==='Marginal' || status==='Poor',
+    primary: primaryTx.primary,
+    additional: (secondaryTx && secondaryTx.primary !== primaryTx.primary) ? secondaryTx.primary : (primaryTx.additional || '—'),
+    reasonFeatures,
+    reason: reasonText,
+    expectedImprovement: status==='Poor'
+      ? 'Expected to meaningfully reduce the flagged impurities, though a Poor sample may need more than one treatment stage.'
+      : 'Expected to bring the flagged parameters back toward an acceptable range.'
+  };
+}
+
+/* ---------------- slideshow (collapsible instructional panel, not a chatbot) ---------------- */
+const SLIDES = [
+  {title:'Welcome to Aqua XAI', body:'Enter a water sample\u2019s readings and get an instant quality prediction with a plain-language explanation.'},
+  {title:'Every result comes with a recommendation', body:'Each prediction includes a treatment recommendation tied to the specific factors that drove that result \u2014 not a generic checklist.'},
+  {title:'Compare any two analyses', body:'Put two samples side by side to see how their parameters, predictions and recommended treatments differ, and why.'}
+];
+function getSlideshowState(){ return LS.get('aqua_slideshow', {closed:false, index:0}); }
+function setSlideshowState(s){ LS.set('aqua_slideshow', s); }
+function slideshowHTML(){
+  const state = getSlideshowState();
+  if (state.closed){
+    return '<button type="button" id="show-slideshow-btn" class="text-xs inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 mb-1" style="border:1px solid rgba(11,27,43,0.15);color:rgba(11,27,43,0.55)">\u25B6 Show slideshow</button>';
+  }
+  const i = Math.min(state.index, SLIDES.length-1);
+  const slide = SLIDES[i];
+  return '<div class="relative p-5 rounded-xl" style="background:var(--navy-950);color:#fff">'+
+    '<button type="button" id="close-slideshow-btn" aria-label="Close slideshow" class="absolute top-3 right-3 h-6 w-6 rounded-full flex items-center justify-center text-sm" style="color:rgba(246,245,241,0.55)">\u2715</button>'+
+    '<p class="text-xs uppercase tracking-wide mb-1" style="color:var(--aqua-500);letter-spacing:0.06em">Getting started</p>'+
+    '<p class="text-base font-medium mb-1 pr-6">'+esc(slide.title)+'</p>'+
+    '<p class="text-sm" style="color:rgba(246,245,241,0.7);max-width:34rem">'+esc(slide.body)+'</p>'+
+    '<div class="flex items-center gap-1.5 mt-4">'+SLIDES.map(function(_,idx){ return '<button type="button" data-slide-index="'+idx+'" aria-label="Go to slide '+(idx+1)+'" style="width:'+(idx===i?'18px':'7px')+';height:7px;border-radius:4px;border:none;background:'+(idx===i?'var(--aqua-500)':'rgba(255,255,255,0.25)')+';transition:width .15s"></button>'; }).join('')+'</div>'+
+  '</div>';
+}
+
+/* ---------------- lightweight modal (rename / delete confirmation) ---------------- */
+function openModal(innerHTML){
+  document.getElementById('modal-root').innerHTML =
+    '<div class="fixed inset-0 z-50 flex items-center justify-center p-4" data-modal-backdrop style="background:rgba(11,27,43,0.45)">'+
+      '<div class="bg-white rounded-xl p-5 w-full max-w-sm shadow-xl" data-modal-box>'+innerHTML+'</div>'+
+    '</div>';
+}
+function closeModal(){ document.getElementById('modal-root').innerHTML=''; }
+function renameModalHTML(a){
+  return '<h3 class="text-sm font-semibold mb-3" style="color:var(--navy-950)">Rename analysis</h3>'+
+    '<input id="rename-input" class="field-input mb-4" value="'+esc(a.label||'Water analysis')+'"/>'+
+    '<div class="flex justify-end gap-2"><button type="button" data-modal-cancel class="btn-secondary">Cancel</button><button type="button" data-rename-save="'+a.id+'" class="btn-primary">Save</button></div>';
+}
+function deleteModalHTML(a){
+  return '<h3 class="text-sm font-semibold mb-2" style="color:var(--navy-950)">Delete this analysis?</h3>'+
+    '<p class="text-sm mb-4" style="color:rgba(11,27,43,0.6)">This analysis will be removed from your history. This can\u2019t be undone.</p>'+
+    '<div class="flex justify-end gap-2"><button type="button" data-modal-cancel class="btn-secondary">Cancel</button><button type="button" data-delete-confirm="'+a.id+'" class="btn-primary" style="background:var(--danger-600)">Delete</button></div>';
+}
+
+/* ---------------- contextual assistant lookup (by specific analysis, not just the latest) ---------------- */
+function getContextForAnalysis(id){
+  const user = currentUser();
+  if (!user) return null;
+  const history = getHistory(user.id);
+  const analysis = id ? history.find(a=>a.id===id) : history[0];
+  if (!analysis) return null;
+  return { waterQuality: analysis.result.water_quality, confidence: analysis.result.confidence, contributions: analysis.contributions, treatment: analysis.treatment };
+}
+
+/* ---------------- helpers ---------------- */
+function formatTimestamp(iso){
+  try{ return new Date(iso).toLocaleString(undefined,{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){ return iso; }
+}
+function formatShortDate(iso){
+  try{ return new Date(iso).toLocaleDateString(undefined,{day:'2-digit',month:'short'}); }catch(e){ return iso; }
+}
+function statusBadge(status, size){
+  const meta = STATUS_META[status] || {tone:'warn', symbol:'\u26A0'};
+  const cls = meta.tone==='ok' ? 'badge-ok' : meta.tone==='danger' ? 'badge-danger' : 'badge-warn';
+  const pad = size==='sm' ? 'text-xs px-2 py-0.5' : '';
+  return '<span class="badge '+cls+' '+pad+'"><span aria-hidden="true">'+meta.symbol+'</span>'+status+'</span>';
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function dropletMark(size, color){
+  size = size || 18; color = color || 'currentColor';
+  return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="flex-shrink:0">'+
+    '<path d="M12 2.5C9.2 7 5.5 11.2 5.5 15.2C5.5 19.1 8.4 22 12 22C15.6 22 18.5 19.1 18.5 15.2C18.5 11.2 14.8 7 12 2.5Z" stroke="'+color+'" stroke-width="1.6" stroke-linejoin="round"/>'+
+    '<path d="M9 15.5C9 17.2 10.1 18.4 11.6 18.7" stroke="'+color+'" stroke-width="1.4" stroke-linecap="round"/>'+
+    '</svg>';
+}
+function robotMark(size, color){
+  size = size || 22; color = color || 'currentColor';
+  return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="flex-shrink:0">'+
+    '<rect x="4.5" y="8.5" width="15" height="11" rx="3" stroke="'+color+'" stroke-width="1.5"/>'+
+    '<path d="M12 8.5V5.5" stroke="'+color+'" stroke-width="1.5" stroke-linecap="round"/>'+
+    '<circle cx="12" cy="4" r="1.3" fill="'+color+'"/>'+
+    '<circle cx="9" cy="14" r="1.4" fill="'+color+'"/>'+
+    '<circle cx="15" cy="14" r="1.4" fill="'+color+'"/>'+
+    '<path d="M9 17.3C10.6 18.2 13.4 18.2 15 17.3" stroke="'+color+'" stroke-width="1.3" stroke-linecap="round"/>'+
+    '<path d="M2.5 12.5H4.5" stroke="'+color+'" stroke-width="1.5" stroke-linecap="round"/>'+
+    '<path d="M19.5 12.5H21.5" stroke="'+color+'" stroke-width="1.5" stroke-linecap="round"/>'+
+    '</svg>';
+}
+function nextStepGuidance(status, topFeature){
+  const base = "This is a simulated demo result, not a certified water safety test.";
+  if (status==='Excellent' || status==='Good') return base+' Conditions look favorable in this simulation.';
+  if (status==='Fair') return base+(topFeature ? (' Keep an eye on '+topFeature.toLowerCase()+', which influenced this result most.') : '');
+  return base+(topFeature ? (' '+topFeature+' had the largest simulated impact on this result.') : '');
+}
+
+/* ---------------- app state / router ---------------- */
+let route = { view:'dashboard', param:null };
+let compareSelection = [];
+let toast = null;
+let historySearchQuery = '';
+let openHistoryMenuId = null;
+let wqiTableOpen = false;
+
+function showToast(message, type){
+  toast = {message, type: type||'error'};
+  renderToast();
+  setTimeout(()=>{ toast=null; renderToast(); }, 4000);
+}
+function renderToast(){
+  const root = document.getElementById('toast-root');
+  if (!toast){ root.innerHTML=''; return; }
+  const isErr = toast.type==='error';
+  root.innerHTML = '<div role="alert" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm shadow bg-white '+(isErr?'text-red-700 border-red-200':'text-green-700 border-green-200')+'">'+esc(toast.message)+'</div>';
+}
+
+function navigate(view, param){
+  route = { view, param: param||null };
+  render();
+  window.scrollTo(0,0);
+}
+
+function currentUser(){ return getSession(); }
+
+/* ---------------- render ---------------- */
+function render(){
+  const app = document.getElementById('app');
+  const user = currentUser();
+
+  if (!user && route.view!=='login' && route.view!=='register'){
+    route = {view:'login', param:null};
+  }
+
+  if (route.view==='login'){ app.innerHTML = viewLogin(); attachLogin(); return; }
+  if (route.view==='register'){ app.innerHTML = viewRegister(); attachRegister(); return; }
+
+  app.innerHTML = viewShell(route.view);
+  attachShell();
+}
+
+/* ---------- Login / Register ---------- */
+function viewLogin(){
+  return '<div class="min-h-screen grid md:grid-cols-2" style="background:var(--sand-50)">'+
+    '<div class="hidden md:flex flex-col justify-between text-sand-50 p-10 relative overflow-hidden" style="background:var(--navy-950)">'+
+      '<div class="absolute inset-0 pointer-events-none" style="background-image:radial-gradient(rgba(79,168,160,0.14) 1px, transparent 1px);background-size:22px 22px;mask-image:linear-gradient(to bottom, transparent, black 30%, black 70%, transparent);"></div>'+
+      '<div class="flex items-center gap-2 relative">'+dropletMark(22,'var(--aqua-500)')+'<span class="font-semibold text-lg" style="color:#fff;letter-spacing:-0.01em">Aqua XAI</span></div>'+
+      '<div class="max-w-sm relative"><p class="text-2xl font-medium leading-snug" style="color:#fff">Understand your water quality with explainable AI.</p>'+
+      '<p class="text-sm mt-3" style="color:rgba(246,245,241,0.55)">This preview simulates predictions and explanations client-side — connect the real backend for actual model results.</p></div>'+
+      '<p class="text-xs" style="color:rgba(246,245,241,0.35)">Final-year engineering project — preview build</p>'+
+    '</div>'+
+    '<div class="flex items-center justify-center p-6">'+
+      '<form id="login-form" class="w-full max-w-sm space-y-5" novalidate>'+
+        '<div><h2 class="text-xl font-semibold" style="color:var(--navy-950)">Sign in</h2>'+
+        '<p class="text-sm mt-1" style="color:rgba(11,27,43,0.55)">Access your water quality dashboard.</p></div>'+
+        '<div id="login-error"></div>'+
+        '<div><label class="field-label" for="login-email">Email</label><input id="login-email" type="email" class="field-input" autocomplete="email"/></div>'+
+        '<div><label class="field-label" for="login-password">Password</label><input id="login-password" type="password" class="field-input" autocomplete="current-password"/></div>'+
+        '<button type="submit" class="btn-primary w-full justify-center">Sign in</button>'+
+        '<p class="text-sm text-center" style="color:rgba(11,27,43,0.6)">New here? <a href="#" id="go-register" style="color:var(--blue-500);font-weight:500;">Create an account</a></p>'+
+        '<p class="text-xs text-center" style="color:rgba(11,27,43,0.4)">Demo tip: any email/password combo you register works to sign back in.</p>'+
+      '</form>'+
+    '</div></div>';
+}
+function attachLogin(){
+  document.getElementById('go-register').onclick = (e)=>{ e.preventDefault(); navigate('register'); };
+  document.getElementById('login-form').onsubmit = (e)=>{
+    e.preventDefault();
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    const errBox = document.getElementById('login-error');
+    errBox.innerHTML='';
+    if (!email){ errBox.innerHTML = errorLine('Please enter your email.'); return; }
+    if (!password){ errBox.innerHTML = errorLine('Please enter your password.'); return; }
+    if (password.length < 6){ errBox.innerHTML = errorLine('Password must contain at least 6 characters.'); return; }
+    const users = getUsers();
+    const found = users.find(u=>u.email.toLowerCase()===email.toLowerCase() && u.password===password);
+    if (!found){ errBox.innerHTML = errorLine('Incorrect email or password.'); return; }
+    setSession({id:found.id, name:found.name, email:found.email});
+    navigate('dashboard');
+  };
+}
+function viewRegister(){
+  return '<div class="min-h-screen grid md:grid-cols-2" style="background:var(--sand-50)">'+
+    '<div class="hidden md:flex flex-col justify-between text-sand-50 p-10 relative overflow-hidden" style="background:var(--navy-950)">'+
+      '<div class="absolute inset-0 pointer-events-none" style="background-image:radial-gradient(rgba(79,168,160,0.14) 1px, transparent 1px);background-size:22px 22px;mask-image:linear-gradient(to bottom, transparent, black 30%, black 70%, transparent);"></div>'+
+      '<div class="flex items-center gap-2 relative">'+dropletMark(22,'var(--aqua-500)')+'<span class="font-semibold text-lg" style="color:#fff;letter-spacing:-0.01em">Aqua XAI</span></div>'+
+      '<div class="max-w-sm relative"><p class="text-2xl font-medium leading-snug" style="color:#fff">Explainable water quality analysis.</p></div>'+
+      '<p class="text-xs" style="color:rgba(246,245,241,0.35)">Final-year engineering project — preview build</p>'+
+    '</div>'+
+    '<div class="flex items-center justify-center p-6">'+
+      '<form id="register-form" class="w-full max-w-sm space-y-4" novalidate>'+
+        '<div><h2 class="text-xl font-semibold" style="color:var(--navy-950)">Create your account</h2></div>'+
+        '<div id="register-error"></div>'+
+        '<div><label class="field-label" for="reg-name">Full name</label><input id="reg-name" class="field-input"/></div>'+
+        '<div><label class="field-label" for="reg-email">Email</label><input id="reg-email" type="email" class="field-input"/></div>'+
+        '<div><label class="field-label" for="reg-password">Password</label><input id="reg-password" type="password" class="field-input"/></div>'+
+        '<div><label class="field-label" for="reg-confirm">Confirm password</label><input id="reg-confirm" type="password" class="field-input"/></div>'+
+        '<button type="submit" class="btn-primary w-full justify-center">Create account</button>'+
+        '<p class="text-sm text-center" style="color:rgba(11,27,43,0.6)">Already have an account? <a href="#" id="go-login" style="color:var(--blue-500);font-weight:500;">Sign in</a></p>'+
+      '</form>'+
+    '</div></div>';
+}
+function attachRegister(){
+  document.getElementById('go-login').onclick=(e)=>{ e.preventDefault(); navigate('login'); };
+  document.getElementById('register-form').onsubmit=(e)=>{
+    e.preventDefault();
+    const name = document.getElementById('reg-name').value.trim();
+    const email = document.getElementById('reg-email').value.trim();
+    const password = document.getElementById('reg-password').value;
+    const confirm = document.getElementById('reg-confirm').value;
+    const errBox = document.getElementById('register-error');
+    errBox.innerHTML = '';
+    if (!name){ errBox.innerHTML = errorLine('Please enter your name.'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ errBox.innerHTML = errorLine('Enter a valid email address.'); return; }
+    if (password.length < 6){ errBox.innerHTML = errorLine('Password must contain at least 6 characters.'); return; }
+    if (password !== confirm){ errBox.innerHTML = errorLine('Passwords do not match.'); return; }
+    const users = getUsers();
+    if (users.some(u=>u.email.toLowerCase()===email.toLowerCase())){ errBox.innerHTML = errorLine('An account with this email already exists.'); return; }
+    const user = {id:uid(), name, email, password};
+    users.push(user); setUsers(users);
+    setSession({id:user.id, name:user.name, email:user.email});
+    navigate('dashboard');
+  };
+}
+function errorLine(msg){ return '<p role="alert" class="text-sm rounded-lg px-3 py-2" style="background:var(--danger-50);color:var(--danger-600)">'+esc(msg)+'</p>'; }
+
+/* ---------- App shell (sidebar + topbar + content) ---------- */
+const NAV = [
+  {view:'dashboard', label:'Dashboard', icon:'\u25A6'},
+  {view:'new-analysis', label:'New analysis', icon:'\u2697'},
+  {view:'history', label:'History', icon:'\u23F1'},
+  {view:'compare', label:'Compare', icon:'\u21C4'},
+  {view:'assistant', label:'Aqua Assistant', icon:null},
+  {view:'profile', label:'Profile', icon:'\u25A4'},
+];
+
+function viewShell(view){
+  return '<div class="min-h-screen flex" style="background:var(--sand-50)">'+
+    sidebarHTML(view)+
+    '<div class="flex-1 min-w-0 pb-16 md:pb-0">'+
+      '<div class="max-w-6xl mx-auto">'+contentHTML(view)+'</div>'+
+    '</div>'+
+    mobileNavHTML(view)+
+  '</div>';
+}
+function sidebarHTML(view){
+  return '<aside class="hidden md:flex md:w-56 md:flex-col md:shrink-0 min-h-screen text-sand-50" style="background:var(--navy-950)">'+
+    '<div class="px-5 pt-6 pb-5"><div class="flex items-center gap-2">'+dropletMark(19,'var(--aqua-500)')+'<span class="font-semibold" style="color:#fff;letter-spacing:-0.01em">Aqua XAI</span></div>'+
+    '<p class="text-xs mt-1" style="color:rgba(246,245,241,0.45)">Explainable water analysis</p></div>'+
+    '<nav class="flex-1 px-3 space-y-0.5">'+
+      NAV.map(n=>'<a href="#" data-nav="'+n.view+'" class="sidebar-link '+(view===n.view?'active':'')+'"><span aria-hidden="true">'+(n.icon ? n.icon : robotMark(15,'currentColor'))+'</span>'+n.label+'</a>').join('')+
+    '</nav>'+
+    '<div class="px-5 py-4 text-xs" style="color:rgba(246,245,241,0.3)">Preview build \u00b7 simulated model</div>'+
+  '</aside>';
+}
+function mobileNavHTML(view){
+  const items = [{view:'dashboard',label:'Home'},{view:'new-analysis',label:'Analyze'},{view:'history',label:'History'},{view:'assistant',label:'Assistant'},{view:'profile',label:'Profile'}];
+  return '<nav class="md:hidden fixed bottom-0 inset-x-0 z-30 flex justify-around py-1.5" style="background:var(--navy-950);border-top:1px solid rgba(255,255,255,0.1)">'+
+    items.map(n=>'<a href="#" data-nav="'+n.view+'" class="mobile-link '+(view===n.view?'active':'')+'">'+n.label+'</a>').join('')+
+  '</nav>';
+}
+function topbarHTML(title, subtitle){
+  const user = currentUser();
+  return '<header class="flex items-center justify-between px-4 md:px-8 py-5" style="border-bottom:1px solid rgba(11,27,43,0.08)">'+
+    '<div><h1 class="text-lg font-semibold" style="color:var(--navy-950)">'+esc(title)+'</h1>'+
+    (subtitle? '<p class="text-sm mt-0.5" style="color:rgba(11,27,43,0.55)">'+esc(subtitle)+'</p>' : '')+'</div>'+
+    (user ? '<div class="hidden sm:flex items-center gap-2 text-sm" style="color:rgba(11,27,43,0.7)"><span class="h-7 w-7 rounded-full flex items-center justify-center text-xs font-semibold" style="background:rgba(45,110,158,0.1);color:var(--blue-600)">'+esc((user.name||'U')[0].toUpperCase())+'</span>'+esc(user.name)+'</div>':'')+
+  '</header>';
+}
+function cardOpen(title, subtitle){
+  return '<section class="panel p-5">'+(title?'<div class="mb-4"><h3 class="text-sm font-semibold" style="color:var(--navy-950)">'+esc(title)+'</h3>'+(subtitle?'<p class="text-xs mt-0.5" style="color:rgba(11,27,43,0.55)">'+esc(subtitle)+'</p>':'')+'</div>':'');
+}
+const cardClose = '</section>';
+
+function contentHTML(view){
+  if (view==='dashboard') return dashboardHTML();
+  if (view==='new-analysis') return newAnalysisHTML();
+  if (view==='analysis-result') return resultHTML(route.param);
+  if (view==='history') return historyHTML();
+  if (view==='history-detail') return resultHTML(route.param, true);
+  if (view==='compare') return compareHTML();
+  if (view==='profile') return profileHTML();
+  if (view==='assistant') return assistantPageHTML();
+  return dashboardHTML();
+}
+
+/* ---------- Dashboard ---------- */
+function dashboardHTML(){
+  const user = currentUser();
+  const history = getHistory(user.id);
+  const latest = history[0];
+  return topbarHTML('Welcome back, '+(user.name.split(' ')[0]||'there'), "Let's analyze your water sample.")+
+  '<div class="p-4 md:p-8 space-y-6">'+
+    slideshowHTML()+
+    '<div class="rounded-lg px-4 py-3 text-sm" style="background:var(--warn-50);color:var(--warn-600)">Preview mode: predictions and SHAP values shown here are simulated in your browser, not from the real trained model.</div>'+
+    cardOpen('New water analysis', "Enter a sample's readings to get a prediction and explanation.")+
+      '<a href="#" data-nav="new-analysis" class="btn-primary">\u2697 Start new analysis</a>'+
+    cardClose+
+    '<div class="grid md:grid-cols-3 gap-6">'+
+      '<div class="md:col-span-2">'+cardOpen('Latest analysis')+
+        (latest ?
+          '<div class="flex flex-wrap items-center gap-4">'+statusBadge(latest.result.water_quality)+
+          '<span class="text-sm font-mono" style="color:rgba(11,27,43,0.6)">WQI '+latest.result.confidence.toFixed(1)+'%</span>'+
+          '<span class="text-xs font-mono" style="color:rgba(11,27,43,0.45)">'+formatTimestamp(latest.createdAt)+'</span>'+
+          '<a href="#" data-nav="history-detail" data-param="'+latest.id+'" class="text-xs font-medium ml-auto" style="color:var(--blue-600)">View details</a></div>'
+          : '<div class="text-center py-8"><p class="text-sm font-semibold" style="color:var(--navy-950)">No water analyses yet.</p><p class="text-sm mt-1" style="color:rgba(11,27,43,0.55)">Run your first analysis to start building your history.</p><a href="#" data-nav="new-analysis" class="btn-primary mt-3 inline-flex">Analyze water</a></div>')+
+      cardClose+'</div>'+
+      cardOpen('At a glance')+
+        '<dl class="space-y-3 text-sm"><div class="flex justify-between"><dt style="color:rgba(11,27,43,0.55)">Total analyses</dt><dd class="font-mono font-medium">'+history.length+'</dd></div>'+
+        '<div class="flex justify-between"><dt style="color:rgba(11,27,43,0.55)">Last analysis</dt><dd class="font-mono font-medium">'+(latest? formatShortDate(latest.createdAt) : '\u2014')+'</dd></div></dl>'+
+      cardClose+
+    '</div>'+
+    (history.length>0 ? cardOpen('Water analysis timeline', 'Your previous analyses, chronologically.')+timelineHTML(history)+cardClose : '')+
+  '</div>';
+}
+function timelineHTML(history){
+  return '<ol class="flex gap-5 overflow-x-auto pb-1">'+history.slice(0,10).map(a=>{
+    const meta = STATUS_META[a.result.water_quality]||{tone:'warn'};
+    const dot = meta.tone==='ok' ? 'var(--ok-600)' : meta.tone==='danger' ? 'var(--danger-600)' : 'var(--warn-600)';
+    return '<li class="shrink-0"><a href="#" data-nav="history-detail" data-param="'+a.id+'" class="flex flex-col items-center gap-1.5">'+
+      '<span class="text-xs font-mono" style="color:rgba(11,27,43,0.5)">'+formatShortDate(a.createdAt)+'</span>'+
+      '<span class="h-2.5 w-2.5 rounded-full" style="background:'+dot+'"></span>'+
+      '<span class="text-[11px]" style="color:rgba(11,27,43,0.65)">'+a.result.water_quality+'</span></a></li>';
+  }).join('')+'</ol>';
+}
+
+/* ---------- New Analysis ---------- */
+let formState = Object.assign({}, EMPTY_FORM);
+let formErrors = {};
+
+function fieldHTML(f, value, error){
+  return '<div><div class="flex items-center gap-1.5 mb-1"><label class="text-sm" style="color:rgba(20,40,61,0.7)" for="f-'+f.key+'">'+f.label+'</label>'+
+    '<span title="'+esc(f.info)+'" style="cursor:help;color:rgba(11,27,43,0.35);font-size:12px;" aria-hidden="true">\u24D8</span></div>'+
+    '<div class="relative"><input id="f-'+f.key+'" data-field="'+f.key+'" type="number" step="'+f.step+'" value="'+esc(value)+'" class="field-input '+(f.unit?'pr-14':'')+' '+(error?'border-red-500':'')+'"/>'+
+    (f.unit?'<span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-mono" style="color:rgba(11,27,43,0.4)">'+f.unit+'</span>':'')+'</div>'+
+    (error?'<p class="mt-1 text-xs" style="color:var(--danger-600)">'+esc(error)+'</p>':'')+'</div>';
+}
+function newAnalysisHTML(){
+  const f = formState, e = formErrors;
+  const basic = NUMERIC_FIELDS.filter(x=>x.group==='Basic');
+  const chem = NUMERIC_FIELDS.filter(x=>x.group==='Chemical');
+  return topbarHTML('New analysis', "Enter a water sample's readings for prediction.")+
+  '<div class="p-4 md:p-8 max-w-3xl space-y-5">'+
+    '<div class="flex items-center justify-between flex-wrap gap-3">'+
+      '<div class="flex flex-wrap gap-2">'+SAMPLE_PROFILES.map(p=>'<button type="button" data-sample="'+p.id+'" class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium" style="border-color:rgba(11,27,43,0.15);color:rgba(11,27,43,0.75)">\u2697 '+p.label+'</button>').join('')+'</div>'+
+      '<button type="button" id="clear-form" class="btn-ghost">\u21BA Clear all</button>'+
+    '</div>'+
+    cardOpen()+
+    '<form id="analysis-form" novalidate class="space-y-6">'+
+      '<div><p class="text-xs font-semibold uppercase tracking-wide mb-2" style="color:rgba(11,27,43,0.5)">Location</p>'+
+        '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'+
+          selectHTML('country','Country', COUNTRIES, f.country, e.country)+
+          selectHTML('waterbodyType','Waterbody type', WATERBODIES, f.waterbodyType, e.waterbodyType)+
+        '</div></div>'+
+      '<div><p class="text-xs font-semibold uppercase tracking-wide mb-2" style="color:rgba(11,27,43,0.5)">Basic water parameters</p>'+
+        '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'+basic.map(x=>fieldHTML(x, f[x.key], e[x.key])).join('')+'</div></div>'+
+      '<div><p class="text-xs font-semibold uppercase tracking-wide mb-2" style="color:rgba(11,27,43,0.5)">Chemical parameters</p>'+
+        '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'+chem.map(x=>fieldHTML(x, f[x.key], e[x.key])).join('')+'</div></div>'+
+      '<div><p class="text-xs font-semibold uppercase tracking-wide mb-2" style="color:rgba(11,27,43,0.5)">Sample context</p>'+
+        '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'+
+          '<div><label class="field-label" for="f-year">Year sampled</label><input id="f-year" data-field="year" type="number" value="'+esc(f.year)+'" class="field-input '+(e.year?'border-red-500':'')+'"/>'+(e.year?'<p class="mt-1 text-xs" style="color:var(--danger-600)">'+e.year+'</p>':'')+'</div>'+
+          '<div><label class="field-label" for="f-month">Month sampled (1\u201312)</label><input id="f-month" data-field="month" type="number" value="'+esc(f.month)+'" class="field-input '+(e.month?'border-red-500':'')+'"/>'+(e.month?'<p class="mt-1 text-xs" style="color:var(--danger-600)">'+e.month+'</p>':'')+'</div>'+
+        '</div></div>'+
+      '<div id="stage-indicator"></div>'+
+      '<div class="flex justify-end pt-5" style="border-top:1px solid rgba(11,27,43,0.08)"><button type="submit" id="submit-btn" class="btn-primary">Analyze water</button></div>'+
+    '</form>'+
+    cardClose+
+  '</div>';
+}
+function selectHTML(key, label, options, value, error){
+  return '<div><label class="field-label" for="f-'+key+'">'+label+'</label>'+
+    '<select id="f-'+key+'" data-field="'+key+'" class="field-input '+(error?'border-red-500':'')+'">'+
+    '<option value="">Select\u2026</option>'+options.map(o=>'<option value="'+o+'" '+(value===o?'selected':'')+'>'+o+'</option>').join('')+
+    '</select>'+(error?'<p class="mt-1 text-xs" style="color:var(--danger-600)">'+esc(error)+'</p>':'')+'</div>';
+}
+function attachNewAnalysisHandlers(){
+  document.querySelectorAll('[data-field]').forEach(el=>{
+    el.addEventListener('change', ()=>{ formState[el.dataset.field] = el.value; });
+  });
+  document.querySelectorAll('[data-sample]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const p = SAMPLE_PROFILES.find(x=>x.id===btn.dataset.sample);
+      formState = Object.assign({}, formState, p.values);
+      formErrors = {};
+      render();
+    });
+  });
+  const clearBtn = document.getElementById('clear-form');
+  if (clearBtn) clearBtn.onclick = ()=>{ formState = Object.assign({}, EMPTY_FORM); formErrors={}; render(); };
+
+  const form = document.getElementById('analysis-form');
+  if (form) form.onsubmit = (e)=>{
+    e.preventDefault();
+    formErrors = validateForm(formState);
+    if (Object.keys(formErrors).length>0){ render(); return; }
+    runAnalysis();
+  };
+}
+function validateForm(f){
+  const errors = {};
+  if (!f.country) errors.country = 'Select a country.';
+  if (!f.waterbodyType) errors.waterbodyType = 'Select a waterbody type.';
+  NUMERIC_FIELDS.forEach(field=>{
+    const raw = f[field.key];
+    if (raw===''||raw==null){ errors[field.key] = 'Enter a value for '+field.label.toLowerCase()+'.'; return; }
+    const v = Number(raw);
+    if (Number.isNaN(v)) errors[field.key] = 'Must be a number.';
+    else if (v<field.min || v>field.max) errors[field.key] = field.label+' normally ranges between '+field.min+' and '+field.max+'.';
+  });
+  const year = Number(f.year);
+  if (!f.year || Number.isNaN(year) || year<1990 || year>2100) errors.year = 'Enter a valid year.';
+  const month = Number(f.month);
+  if (!f.month || Number.isNaN(month) || month<1 || month>12) errors.month = 'Month must be between 1 and 12.';
+  return errors;
+}
+function runAnalysis(){
+  const stages = ['Preparing analysis\u2026','Running prediction\u2026','Generating explanation\u2026'];
+  const submitBtn = document.getElementById('submit-btn');
+  const indicator = document.getElementById('stage-indicator');
+  let i = 0;
+  submitBtn.disabled = true;
+  function step(){
+    indicator.innerHTML = '<div class="flex items-center gap-2 text-sm" style="color:rgba(11,27,43,0.6)"><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid rgba(11,27,43,0.15);border-top-color:var(--blue-500);animation:spin 0.8s linear infinite;"></span>'+stages[i]+'</div><style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
+    submitBtn.textContent = stages[i];
+    i++;
+    if (i < stages.length){ setTimeout(step, 380); }
+    else {
+      setTimeout(()=>{
+        const sim = simulatePrediction(formState);
+        const treatment = recommendTreatment(sim.result, sim.contributions);
+        const user = currentUser();
+        const history = getHistory(user.id);
+        const analysis = {
+          id: uid(),
+          analysisCode: 'AQA-'+new Date().getFullYear()+'-'+String(history.length+1).padStart(4,'0'),
+          createdAt: new Date().toISOString(),
+          form: Object.assign({}, formState),
+          result: sim.result, contributions: sim.contributions, treatment: treatment
+        };
+        setHistory(user.id, [analysis, ...history]);
+        formState = Object.assign({}, EMPTY_FORM);
+        navigate('analysis-result', analysis.id);
+      }, 380);
+    }
+  }
+  step();
+}
+
+/* ---------- Result / detail view ---------- */
+function resultHTML(id, isHistoryDetail){
+  const user = currentUser();
+  const history = getHistory(user.id);
+  const analysis = history.find(a=>a.id===id);
+  if (!analysis){
+    return topbarHTML('Analysis not found')+'<div class="p-8"><a href="#" data-nav="new-analysis" class="btn-primary">Start a new analysis</a></div>';
+  }
+  const result = analysis.result, contributions = analysis.contributions, form = analysis.form, createdAt = analysis.createdAt, analysisCode = analysis.analysisCode;
+  const treatment = analysis.treatment || recommendTreatment(result, contributions);
+  const topFeature = contributions[0];
+  return topbarHTML(isHistoryDetail?'Past analysis':'Analysis result', analysisCode)+
+  '<div class="p-4 md:p-8 grid lg:grid-cols-3 gap-6">'+
+    '<div class="lg:col-span-2 space-y-6">'+
+      '<div class="panel p-6"><p class="text-xs font-semibold uppercase tracking-wide mb-3" style="color:rgba(11,27,43,0.45)">Water quality assessment</p>'+
+        '<div class="flex flex-wrap items-center gap-4">'+statusBadge(result.water_quality)+
+        '<div class="flex items-baseline gap-1.5"><span class="text-2xl font-semibold font-mono" style="color:var(--navy-950)">'+result.confidence.toFixed(1)+'%</span><span class="text-xs" style="color:rgba(11,27,43,0.5)">WQI score (simulated)</span></div></div>'+
+        (WQI_DEFINITIONS[result.water_quality] ?
+          '<p class="text-sm mt-3" style="color:rgba(11,27,43,0.65);max-width:40rem">'+esc(WQI_DEFINITIONS[result.water_quality].definition)+' <span class="font-mono text-xs" style="color:rgba(11,27,43,0.45)">('+WQI_DEFINITIONS[result.water_quality].range+')</span></p>' : '')+
+        '<div class="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-xs font-mono" style="color:rgba(11,27,43,0.5)"><span>'+analysisCode+'</span><span>'+formatTimestamp(createdAt)+'</span></div>'+
+        '<button type="button" data-toggle-wqi-table class="text-xs mt-3" style="color:var(--blue-600)">'+(wqiTableOpen?'Hide':'View')+' WQI classification scale</button>'+
+        (wqiTableOpen ? wqiReferenceTableHTML(result.water_quality) : '')+
+      '</div>'+
+      '<div class="flex flex-wrap gap-2">'+
+        '<button type="button" id="why-btn" data-scroll-to="explanation-anchor" class="btn-secondary">Why this result?</button>'+
+        '<button type="button" data-ask="'+analysis.id+'" data-question="Explain this prediction simply." class="btn-secondary">Explain this prediction</button>'+
+        '<button type="button" data-scroll-to="treatment-anchor" class="btn-secondary">Treatment recommendation</button>'+
+        '<a href="#" data-nav="compare" data-param="'+analysis.id+'" class="btn-primary sm:ml-auto">Compare \u2192</a>'+
+      '</div>'+
+      cardOpen('Sample inputs', 'Values used for this prediction.')+
+        '<div class="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">'+
+          inputRow('Country', form.country)+inputRow('Waterbody', form.waterbodyType)+inputRow('pH', form.ph)+
+          inputRow('Temperature', form.temperature+' \u00b0C')+inputRow('Dissolved O2', form.dissolvedOxygen+' mg/L')+
+          inputRow('BOD', form.bod+' mg/L')+inputRow('Ammonia', form.ammonia+' mg/L')+inputRow('Orthophosphate', form.orthophosphate+' mg/L')+
+          inputRow('Nitrogen', form.nitrogen+' mg/L')+inputRow('Nitrate', form.nitrate+' mg/L')+inputRow('Year', form.year)+inputRow('Month', form.month)+
+        '</div>'+
+      cardClose+
+      '<div id="explanation-anchor">'+explanationPanelHTML(contributions)+'</div>'+
+      '<div id="treatment-anchor">'+treatmentCardHTML(treatment, analysis.id)+'</div>'+
+    '</div>'+
+    '<div class="space-y-6">'+
+      cardOpen('Analysis summary')+
+        '<dl class="space-y-3 text-sm">'+
+          summaryRow('Prediction', result.water_quality)+
+          summaryRow('Most influential factor', topFeature?topFeature.feature:'Not available')+
+          summaryRow('Recommended treatment', treatment.primary)+
+          summaryRow('Input status', 'Complete')+
+          summaryRow('Analysis ID', analysisCode, true)+
+          summaryRow('Analysis time', formatTimestamp(createdAt), true)+
+        '</dl>'+
+        '<div class="mt-5 pt-4" style="border-top:1px solid rgba(11,27,43,0.08)"><p class="text-xs font-semibold uppercase tracking-wide mb-1.5" style="color:rgba(11,27,43,0.45)">What should I check next?</p>'+
+        '<p class="text-sm leading-relaxed" style="color:rgba(11,27,43,0.7)">'+nextStepGuidance(result.water_quality, topFeature?topFeature.feature:null)+'</p></div>'+
+      cardClose+
+      cardOpen('Compare this result')+
+        '<p class="text-sm mb-3" style="color:rgba(11,27,43,0.6)">See how this sample stacks up against a previous analysis \u2014 parameters, prediction, and recommended treatment.</p>'+
+        '<a href="#" data-nav="compare" data-param="'+analysis.id+'" class="btn-primary w-full justify-center">Compare with another analysis</a>'+
+      cardClose+
+    '</div>'+
+  '</div>'+
+  '<div class="px-4 md:px-8 pb-8 flex justify-end"><a href="#" data-nav="new-analysis" class="btn-primary">Run another analysis</a></div>';
+}
+function treatmentCardHTML(treatment, analysisId){
+  return '<div class="panel p-6">'+
+    '<p class="text-xs font-semibold uppercase tracking-wide mb-1" style="color:rgba(11,27,43,0.45)">Treatment recommendation</p>'+
+    '<p class="text-xs mb-4" style="color:rgba(11,27,43,0.55)">'+(treatment.statusRequired ? 'Action suggested based on this result.' : 'Based on this result.')+'</p>'+
+    '<div class="grid sm:grid-cols-2 gap-4 mb-4">'+
+      '<div><p class="text-xs uppercase tracking-wide mb-1" style="color:rgba(11,27,43,0.45)">Primary treatment</p><p class="text-sm font-medium" style="color:var(--navy-950)">'+esc(treatment.primary)+'</p></div>'+
+      '<div><p class="text-xs uppercase tracking-wide mb-1" style="color:rgba(11,27,43,0.45)">Additional treatment</p><p class="text-sm font-medium" style="color:var(--navy-950)">'+esc(treatment.additional)+'</p></div>'+
+    '</div>'+
+    '<div class="text-sm mb-2" style="color:rgba(11,27,43,0.7)"><span class="font-medium" style="color:var(--navy-950)">Reason: </span>'+esc(treatment.reason)+'</div>'+
+    '<div class="text-sm mb-4" style="color:rgba(11,27,43,0.7)"><span class="font-medium" style="color:var(--navy-950)">Expected improvement: </span>'+esc(treatment.expectedImprovement)+'</div>'+
+    '<button type="button" data-ask="'+analysisId+'" data-question="Why this treatment?" class="btn-ghost px-0">Want to understand this treatment? Why this treatment? \u2192</button>'+
+  '</div>';
+}
+function wqiReferenceTableHTML(highlight){
+  return '<div class="mt-3 overflow-x-auto"><table class="w-full text-xs"><thead><tr class="text-left uppercase tracking-wide" style="color:rgba(11,27,43,0.4);border-bottom:1px solid rgba(11,27,43,0.08)">'+
+    '<th class="py-1.5 pr-4 font-medium">Classification</th><th class="py-1.5 pr-4 font-medium">WQI score range</th><th class="py-1.5 font-medium">Technical definition</th></tr></thead><tbody>'+
+    WQI_ORDER.map(function(k){
+      const d = WQI_DEFINITIONS[k];
+      const active = k===highlight;
+      return '<tr style="border-bottom:1px solid rgba(11,27,43,0.05);'+(active?'background:rgba(45,110,158,0.06)':'')+'">'+
+        '<td class="py-1.5 pr-4 font-medium" style="color:var(--navy-950)">'+k+'</td>'+
+        '<td class="py-1.5 pr-4 font-mono" style="color:rgba(11,27,43,0.6)">'+d.range+'</td>'+
+        '<td class="py-1.5" style="color:rgba(11,27,43,0.6)">'+d.definition+'</td>'+
+      '</tr>';
+    }).join('')+'</tbody></table></div>';
+}
+function inputRow(label, value){ return '<div><p class="text-xs" style="color:rgba(11,27,43,0.45)">'+label+'</p><p class="font-mono" style="color:var(--navy-950)">'+esc(value)+'</p></div>'; }
+function summaryRow(label, value, mono){ return '<div class="flex justify-between gap-4"><dt style="color:rgba(11,27,43,0.55)">'+label+'</dt><dd class="font-medium text-right '+(mono?'font-mono text-xs':'')+'">'+esc(value)+'</dd></div>'; }
+
+let explainMode = 'simple';
+function explanationPanelHTML(contributions){
+  const maxAbs = Math.max.apply(null, contributions.map(c=>Math.abs(c.contribution)).concat([0.001]));
+  const sorted = contributions.slice().sort((a,b)=>a.contribution-b.contribution);
+  return '<div class="panel p-6">'+
+    '<div class="flex items-center justify-between flex-wrap gap-3 mb-1"><div><h3 class="text-sm font-semibold" style="color:var(--navy-950)">Model explanation</h3>'+
+    '<p class="text-xs mt-0.5" style="color:rgba(11,27,43,0.55)">Here is what influenced the prediction (simulated).</p></div>'+
+    '<div class="inline-flex rounded-lg p-0.5 text-xs" style="border:1px solid rgba(11,27,43,0.15)">'+
+      '<button type="button" data-mode="simple" class="px-2.5 py-1 rounded-md" style="'+(explainMode==='simple'?'background:var(--navy-950);color:#fff':'color:rgba(11,27,43,0.6)')+'">Simple</button>'+
+      '<button type="button" data-mode="technical" class="px-2.5 py-1 rounded-md" style="'+(explainMode==='technical'?'background:var(--navy-950);color:#fff':'color:rgba(11,27,43,0.6)')+'">Technical</button>'+
+    '</div></div>'+
+    '<div class="mt-4 space-y-1.5">'+sorted.map(function(c){
+      const widthPct = Math.max(4, Math.round(Math.abs(c.contribution)/maxAbs*100));
+      const color = c.impact==='positive' ? 'var(--ok-600)' : 'var(--danger-600)';
+      return '<div class="flex items-center gap-2 text-xs"><span class="w-40 shrink-0 truncate" style="color:var(--navy-950)">'+c.feature+'</span>'+
+        '<div class="flex-1 h-2 rounded" style="background:rgba(11,27,43,0.06)"><div class="h-full rounded" style="width:'+widthPct+'%;background:'+color+'"></div></div>'+
+        '<span class="w-14 text-right font-mono" style="color:'+color+'">'+(c.contribution>0?'+':'')+c.contribution.toFixed(3)+'</span></div>';
+    }).join('')+'</div>'+
+    '<div class="flex items-center gap-4 mt-3 text-xs" style="color:rgba(11,27,43,0.55)">'+
+      '<span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm inline-block" style="background:var(--ok-600)"></span>Pushes toward a better result</span>'+
+      '<span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm inline-block" style="background:var(--danger-600)"></span>Pushes toward a worse result</span>'+
+    '</div>'+
+    '<div class="mt-5 space-y-3"><p class="text-xs font-semibold uppercase tracking-wide" style="color:rgba(11,27,43,0.45)">Feature contribution</p>'+
+      '<ul style="border-top:1px solid rgba(11,27,43,0.08)">'+contributions.map(function(c){
+        const line = explainMode==='simple'
+          ? (c.impact==='positive' ? c.feature+' pushed the result toward a better outcome.' : c.feature+' pushed the result toward a worse outcome.')
+          : ('Simulated contribution of '+(c.contribution>0?'+':'')+c.contribution.toFixed(3)+' toward the model output, direction: '+c.impact+'.');
+        return '<li class="py-3 flex items-start justify-between gap-4" style="border-bottom:1px solid rgba(11,27,43,0.06)"><div><p class="text-sm font-medium" style="color:var(--navy-950)">'+c.feature+'</p>'+
+          '<p class="text-xs mt-0.5" style="color:rgba(11,27,43,0.55)">'+line+'</p></div>'+
+          '<div class="text-right shrink-0"><p class="text-sm font-mono" style="color:var(--navy-950)">'+esc(c.value)+'</p>'+
+          '<p class="text-xs font-mono" style="color:'+(c.impact==='positive'?'var(--ok-600)':'var(--danger-600)')+'">'+(c.contribution>0?'+':'')+c.contribution.toFixed(3)+'</p></div></li>';
+      }).join('')+'</ul></div>'+
+  '</div>';
+}
+
+/* ---------- History ---------- */
+function groupHistoryByDate(history){
+  const groups = {}; const order = [];
+  const todayStr = new Date().toDateString();
+  const yestStr = new Date(Date.now()-86400000).toDateString();
+  history.forEach(function(a){
+    const d = new Date(a.createdAt);
+    const dayStr = d.toDateString();
+    const label = dayStr===todayStr ? 'Today' : dayStr===yestStr ? 'Yesterday' : d.toLocaleDateString(undefined,{day:'2-digit',month:'short',year:'numeric'});
+    if (!groups[label]){ groups[label]=[]; order.push(label); }
+    groups[label].push(a);
+  });
+  return order.map(function(label){ return {label:label, items:groups[label]}; });
+}
+function searchMatches(a, q){
+  if (!q || !q.trim()) return true;
+  const needle = q.trim().toLowerCase();
+  const treatment = a.treatment || recommendTreatment(a.result, a.contributions);
+  const hay = [a.label||'Water analysis', a.analysisCode, a.result.water_quality, formatTimestamp(a.createdAt), treatment.primary, treatment.additional, a.form.country, a.form.waterbodyType]
+    .concat(NUMERIC_FIELDS.map(function(f){ return f.label+' '+a.form[f.key]; }))
+    .join(' ').toLowerCase();
+  return hay.indexOf(needle)!==-1;
+}
+function historyMenuHTML(id){
+  return '<div data-menu-root="'+id+'" class="absolute right-2 top-9 z-10 w-36 panel py-1">'+
+    '<a href="#" data-nav="history-detail" data-param="'+id+'" class="block px-3 py-1.5 text-sm" style="color:var(--navy-950)">Open</a>'+
+    '<button type="button" data-compare-from="'+id+'" class="block w-full text-left px-3 py-1.5 text-sm" style="color:var(--navy-950)">Compare</button>'+
+    '<button type="button" data-rename="'+id+'" class="block w-full text-left px-3 py-1.5 text-sm" style="color:var(--navy-950)">Rename</button>'+
+    '<button type="button" data-delete-analysis="'+id+'" class="block w-full text-left px-3 py-1.5 text-sm" style="color:var(--danger-600)">Delete</button>'+
+  '</div>';
+}
+function historyRowHTML(a){
+  const treatment = a.treatment || recommendTreatment(a.result, a.contributions);
+  const title = a.label || 'Water analysis';
+  const timeOnly = new Date(a.createdAt).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+  return '<div class="relative px-3 py-2.5" style="border-bottom:1px solid rgba(11,27,43,0.05)">'+
+    '<div class="flex items-start justify-between gap-2">'+
+      '<a href="#" data-nav="history-detail" data-param="'+a.id+'" class="flex-1 min-w-0">'+
+        '<div class="flex items-center gap-2"><span class="text-sm font-medium truncate" style="color:var(--navy-950)">'+esc(title)+'</span><span class="text-xs font-mono shrink-0" style="color:rgba(11,27,43,0.4)">'+timeOnly+'</span></div>'+
+        '<div class="flex items-center gap-2 mt-1 flex-wrap">'+statusBadge(a.result.water_quality,'sm')+'<span class="text-xs truncate" style="color:rgba(11,27,43,0.55)">'+esc(treatment.primary)+'</span></div>'+
+      '</a>'+
+      '<button type="button" data-menu-toggle="'+a.id+'" aria-label="More actions for '+esc(title)+'" class="shrink-0 text-sm px-1.5 rounded" style="color:rgba(11,27,43,0.4)">\u22EE</button>'+
+    '</div>'+
+    (openHistoryMenuId===a.id ? historyMenuHTML(a.id) : '')+
+  '</div>';
+}
+function historyHTML(){
+  const user = currentUser();
+  const all = getHistory(user.id);
+  const filtered = all.filter(function(a){ return searchMatches(a, historySearchQuery); });
+  const groups = groupHistoryByDate(filtered);
+  return topbarHTML('Analysis history', "Searchable record of every water analysis you've run.")+
+  '<div class="p-4 md:p-8 max-w-2xl">'+
+    '<div class="panel p-3 mb-4">'+
+      '<div class="relative mb-2"><input id="history-search" value="'+esc(historySearchQuery)+'" class="field-input text-sm" style="padding-left:30px" placeholder="Search by prediction, treatment, date, or parameter\u2026"/>'+
+      '<span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:rgba(11,27,43,0.35);font-size:13px" aria-hidden="true">\u2315</span></div>'+
+      '<a href="#" data-nav="new-analysis" class="btn-secondary w-full justify-center text-sm">+ New analysis</a>'+
+    '</div>'+
+    (all.length===0 ?
+      '<div class="panel p-10 text-center"><p class="text-sm font-semibold" style="color:var(--navy-950)">No water analyses yet.</p><p class="text-sm mt-1" style="color:rgba(11,27,43,0.55)">Run your first analysis to start building your history.</p><a href="#" data-nav="new-analysis" class="btn-primary mt-3 inline-flex">\u2697 Analyze water</a></div>'
+      : (groups.length===0 ?
+        '<div class="panel p-10 text-center"><p class="text-sm font-semibold" style="color:var(--navy-950)">No analyses found</p><p class="text-sm mt-1" style="color:rgba(11,27,43,0.55)">Try a different search term.</p></div>'
+        : groups.map(function(g){
+            return '<div class="mb-4"><p class="text-xs font-semibold uppercase tracking-wide mb-1.5 px-1" style="color:rgba(11,27,43,0.4)">'+g.label+'</p><div class="panel py-1">'+g.items.map(historyRowHTML).join('')+'</div></div>';
+          }).join('')))+
+  '</div>';
+}
+function historyTableHTML(history, selectable){
+  return '<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="text-left text-xs uppercase tracking-wide" style="color:rgba(11,27,43,0.45);border-bottom:1px solid rgba(11,27,43,0.08)">'+
+    (selectable?'<th class="py-2 pr-2 w-8"></th>':'')+
+    '<th class="py-2 pr-4 font-medium">Date</th><th class="py-2 pr-4 font-medium">Analysis</th><th class="py-2 pr-4 font-medium">Result</th><th class="py-2 pr-4 font-medium">Main factor</th><th></th></tr></thead>'+
+    '<tbody>'+history.map(function(a){
+      const checked = compareSelection.indexOf(a.id) !== -1;
+      return '<tr style="border-bottom:1px solid rgba(11,27,43,0.05)">'+
+        (selectable?'<td class="py-3 pr-2"><input type="checkbox" data-compare="'+a.id+'" '+(checked?'checked':'')+'/></td>':'')+
+        '<td class="py-3 pr-4 font-mono text-xs" style="color:rgba(11,27,43,0.7)">'+formatShortDate(a.createdAt)+'</td>'+
+        '<td class="py-3 pr-4 font-mono text-xs" style="color:rgba(11,27,43,0.7)">'+a.analysisCode+'</td>'+
+        '<td class="py-3 pr-4">'+statusBadge(a.result.water_quality,'sm')+'</td>'+
+        '<td class="py-3 pr-4" style="color:rgba(11,27,43,0.7)">'+(a.contributions[0]?a.contributions[0].feature:'\u2014')+'</td>'+
+        '<td class="py-3 pr-4 text-right"><a href="#" data-nav="history-detail" data-param="'+a.id+'" class="text-xs font-medium" style="color:var(--blue-600)">View details</a></td>'+
+      '</tr>';
+    }).join('')+'</tbody></table></div>';
+}
+
+/* ---------- Compare ---------- */
+function vsSideCard(a, align){
+  const meta = STATUS_META[a.result.water_quality] || {tone:'warn'};
+  const accent = meta.tone==='ok' ? 'var(--ok-600)' : meta.tone==='danger' ? 'var(--danger-600)' : 'var(--warn-600)';
+  const top = a.contributions[0];
+  const treatment = a.treatment || recommendTreatment(a.result, a.contributions);
+  return '<div class="flex-1 panel p-5" style="border-top:3px solid '+accent+';border-radius:12px">'+
+    '<p class="text-xs font-mono mb-2" style="color:rgba(11,27,43,0.45)">'+a.analysisCode+' \u00b7 '+formatShortDate(a.createdAt)+'</p>'+
+    '<div class="mb-3">'+statusBadge(a.result.water_quality)+'</div>'+
+    '<p class="text-2xl font-semibold font-mono" style="color:var(--navy-950)">'+a.result.confidence.toFixed(1)+'%</p>'+
+    '<p class="text-xs mb-4" style="color:rgba(11,27,43,0.5)">WQI score (simulated)</p>'+
+    '<dl class="space-y-2 text-xs" style="border-top:1px solid rgba(11,27,43,0.08);padding-top:12px">'+
+      '<div class="flex justify-between"><dt style="color:rgba(11,27,43,0.5)">Country</dt><dd class="font-mono">'+esc(a.form.country)+'</dd></div>'+
+      '<div class="flex justify-between"><dt style="color:rgba(11,27,43,0.5)">Waterbody</dt><dd class="font-mono">'+esc(a.form.waterbodyType)+'</dd></div>'+
+      '<div class="flex justify-between"><dt style="color:rgba(11,27,43,0.5)">Top factor</dt><dd class="font-mono text-right">'+(top?esc(top.feature):'\u2014')+'</dd></div>'+
+    '</dl>'+
+    '<div class="mt-3 pt-3" style="border-top:1px solid rgba(11,27,43,0.08)">'+
+      '<p class="text-xs uppercase tracking-wide mb-1" style="color:rgba(11,27,43,0.45)">Treatment</p>'+
+      '<p class="text-xs font-medium" style="color:var(--navy-950)">'+esc(treatment.primary)+'</p>'+
+    '</div>'+
+  '</div>';
+}
+function vsMatchupHTML(a, b){
+  return '<div class="flex items-stretch gap-3 md:gap-4 mb-6">'+
+    vsSideCard(a,'left')+
+    '<div class="flex flex-col items-center justify-center shrink-0 px-1">'+
+      '<span class="font-semibold" style="color:var(--navy-950);font-size:13px;letter-spacing:0.05em;background:var(--sand-100);border-radius:999px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;">VS</span>'+
+    '</div>'+
+    vsSideCard(b,'right')+
+  '</div>';
+}
+function describeFieldDiff(f, va, vb){
+  va = Number(va); vb = Number(vb);
+  const diff = va - vb;
+  if (Math.abs(diff) < f.step*2) return null;
+  const higherIsA = diff > 0;
+  const higherIsBetter = f.weight > 0;
+  const higherFavorable = (higherIsA && higherIsBetter) || (!higherIsA && !higherIsBetter);
+  const higherSample = higherIsA ? 'Sample A' : 'Sample B';
+  return higherSample+' has higher '+f.label.toLowerCase()+' ('+(higherIsA?va:vb)+' vs '+(higherIsA?vb:va)+' '+f.unit+'), which is '+(higherFavorable?'closer to a favorable range.':'elevated, pulling that prediction down.');
+}
+function whyDifferentHTML(a, b){
+  const diffs = [];
+  const phA = Number(a.form.ph), phB = Number(b.form.ph);
+  if (Math.abs(Math.abs(phA-7)-Math.abs(phB-7)) > 0.2){
+    const worse = Math.abs(phA-7) > Math.abs(phB-7) ? 'Sample A' : 'Sample B';
+    diffs.push(worse+"'s pH sits further from neutral (7), which works against its prediction.");
+  }
+  NUMERIC_FIELDS.filter(f=>f.key!=='ph').forEach(function(f){
+    const line = describeFieldDiff(f, a.form[f.key], b.form[f.key]);
+    if (line) diffs.push(line);
+  });
+  const scored = diffs.map(function(line){ return {line:line, favorable:line.indexOf('favorable')!==-1}; });
+  const top = scored.filter(d=>!d.favorable).slice(0,3).map(d=>d.line);
+  if (a.form.country !== b.form.country || a.form.waterbodyType !== b.form.waterbodyType){
+    top.push('The samples also come from different contexts \u2014 '+a.form.country+' '+a.form.waterbodyType.toLowerCase()+' vs '+b.form.country+' '+b.form.waterbodyType.toLowerCase()+' \u2014 which the model also weighs.');
+  }
+  if (top.length===0) return '';
+  return cardOpen('Why are these predictions different?')+
+    '<ul class="space-y-2 text-sm" style="color:rgba(11,27,43,0.7)">'+top.map(function(line){ return '<li class="flex gap-2"><span style="color:rgba(11,27,43,0.3)">\u2022</span><span>'+esc(line)+'</span></li>'; }).join('')+'</ul>'+
+    '<p class="text-xs mt-3" style="color:rgba(11,27,43,0.45)">These differences contributed to the different predicted water-quality conditions above.</p>'+
+  cardClose;
+}
+function comparisonPreviewHTML(a, b){
+  const ta = a.treatment || recommendTreatment(a.result, a.contributions);
+  const tb = b.treatment || recommendTreatment(b.result, b.contributions);
+  function col(a, t){
+    return '<div class="space-y-2.5 text-center">'+
+      '<p class="text-sm font-semibold" style="color:var(--navy-950)">'+a.result.water_quality+'</p>'+
+      '<p class="text-xs font-mono" style="color:rgba(11,27,43,0.5)">'+a.result.confidence.toFixed(1)+'%</p>'+
+      '<p class="text-xs" style="color:rgba(11,27,43,0.45)">pH '+a.form.ph+'</p>'+
+      '<p class="text-xs" style="color:rgba(11,27,43,0.45)">Ammonia '+a.form.ammonia+'</p>'+
+      '<p class="text-xs font-medium pt-1" style="color:var(--navy-950);border-top:1px solid rgba(11,27,43,0.08)">'+esc(t.primary)+'</p>'+
+    '</div>';
+  }
+  return cardOpen('Comparison preview', 'Quick side-by-side summary.')+
+    '<div class="grid grid-cols-2 gap-4">'+col(a,ta)+col(b,tb)+'</div>'+
+  cardClose;
+}
+function compareHTML(){
+  const user = currentUser();
+  const history = getHistory(user.id);
+  if (history.length===0){
+    return topbarHTML('Compare analyses', 'See how two samples differ.')+
+      '<div class="p-4 md:p-8">'+cardOpen()+'<div class="text-center py-12"><p class="text-sm font-semibold" style="color:var(--navy-950)">No analyses to compare yet.</p><p class="text-sm mt-1" style="color:rgba(11,27,43,0.55)">Run at least two analyses first.</p><a href="#" data-nav="new-analysis" class="btn-primary mt-3 inline-flex">\u2697 Analyze water</a></div>'+cardClose+'</div>';
+  }
+  const a = history.find(function(h){ return h.id===compareSelection[0]; });
+  const b = history.find(function(h){ return h.id===compareSelection[1]; });
+  let compareBlock = '<p class="text-sm" style="color:rgba(11,27,43,0.5)">Select a second analysis above to see the VS comparison.</p>';
+  if (a && b){
+    const rows = [{key:'country',label:'Country'},{key:'waterbodyType',label:'Waterbody type'}]
+      .concat(NUMERIC_FIELDS.map(function(f){ return {key:f.key,label:f.label+' ('+f.unit+')'}; }))
+      .concat([{key:'year',label:'Year'},{key:'month',label:'Month'}]);
+    compareBlock = vsMatchupHTML(a,b) +
+      whyDifferentHTML(a,b) +
+      cardOpen('Parameter breakdown')+
+      (a.result.water_quality!==b.result.water_quality ?
+        '<p class="text-sm rounded-lg px-3 py-2 mb-4" style="background:var(--warn-50);color:var(--warn-600)">Prediction changed from <strong>'+a.analysisCode+'</strong> \u201c'+a.result.water_quality+'\u201d to <strong>'+b.analysisCode+'</strong> \u201c'+b.result.water_quality+'\u201d.</p>' : '')+
+      '<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="text-left text-xs uppercase tracking-wide" style="color:rgba(11,27,43,0.45);border-bottom:1px solid rgba(11,27,43,0.08)"><th class="py-2 pr-4">Parameter</th><th class="py-2 pr-4 font-mono">'+a.analysisCode+'</th><th class="py-2 pr-4 font-mono">'+b.analysisCode+'</th></tr></thead><tbody>'+
+      rows.map(function(r){
+        const va = a.form[r.key], vb = b.form[r.key];
+        const changed = String(va)!==String(vb);
+        const style = changed ? 'color:var(--blue-600);font-weight:600' : 'color:var(--navy-950)';
+        return '<tr style="border-bottom:1px solid rgba(11,27,43,0.05)"><td class="py-2.5 pr-4" style="color:rgba(11,27,43,0.7)">'+r.label+'</td><td class="py-2.5 pr-4 font-mono" style="'+style+'">'+esc(va)+'</td><td class="py-2.5 pr-4 font-mono" style="'+style+'">'+esc(vb)+'</td></tr>';
+      }).join('')+'</tbody></table></div>'+
+      '<p class="text-xs mt-3" style="color:rgba(11,27,43,0.45)">'+formatTimestamp(a.createdAt)+' vs '+formatTimestamp(b.createdAt)+'. Highlighted values differ.</p>'+
+      cardClose +
+      comparisonPreviewHTML(a,b);
+  }
+  return topbarHTML('Compare analyses', 'Select a second analysis to see predictions and treatments side by side.')+
+  '<div class="p-4 md:p-8 space-y-6">'+
+    cardOpen('Compare with', compareSelection[0] ? 'Sample A is set \u2014 pick a second analysis below.' : 'Pick any two rows below.')+historyTableHTML(history, true)+cardClose+
+    compareBlock+
+  '</div>';
+}
+
+/* ---------- Profile ---------- */
+function profileHTML(){
+  const user = currentUser();
+  const history = getHistory(user.id);
+  const first = history[history.length-1];
+  const latest = history[0];
+  return topbarHTML('Profile', 'Your account and preferences.')+
+  '<div class="p-4 md:p-8 max-w-xl space-y-6">'+
+    cardOpen('Account')+
+      '<dl class="space-y-3 text-sm">'+
+        summaryRow('Name', user.name)+summaryRow('Email', user.email)+
+        summaryRow('Number of analyses', history.length)+
+        summaryRow('First analysis', first?formatTimestamp(first.createdAt):'\u2014', true)+
+        summaryRow('Latest analysis', latest?formatTimestamp(latest.createdAt):'\u2014', true)+
+      '</dl>'+
+    cardClose+
+    cardOpen('Actions')+
+      '<div class="space-y-3">'+
+        '<button id="clear-history-btn" class="btn-secondary w-full justify-center">Clear local analysis history</button>'+
+        '<button id="logout-btn" class="btn-secondary w-full justify-center" style="color:var(--danger-600)">Log out</button>'+
+      '</div>'+
+    cardClose+
+  '</div>';
+}
+
+/* ---------- Aqua Assistant (rule-based demo — not a real LLM call) ---------- */
+const ASSISTANT_QA = [
+  {k:['ph'], a:'pH tells you how acidic or alkaline the water is, on a scale of 0 to 14. Values near 7 are neutral; most healthy freshwater sits close to that.'},
+  {k:['turbid'], a:"Turbidity measures how cloudy water is from suspended particles. It's not one of this model's inputs, but it's a common general water-quality indicator."},
+  {k:['shap'], a:'SHAP explains a prediction by showing how much each input feature pushed the result up or down compared to an average baseline. Positive SHAP values push toward a better outcome here; negative values push toward a worse one.'},
+  {k:['lime'], a:"This project's explain endpoint uses SHAP rather than LIME. Both are explainability methods, but SHAP is grounded in game theory and tends to give more consistent attributions across similar samples."},
+  {k:['ammonia'], a:'Ammonia in water often comes from agricultural runoff, sewage, or industrial waste. Elevated levels can be toxic to aquatic life and usually push a prediction toward a worse result.'},
+  {k:['dissolved oxygen','do '], a:'Dissolved oxygen is the oxygen available for fish and aquatic organisms. Low dissolved oxygen is one of the strongest signals of a polluted or stressed waterbody.'},
+];
+function assistantAnswer(question, context){
+  const q = question.toLowerCase();
+  if (q.indexOf('influen')!==-1 || q.indexOf('most')!==-1 || q.indexOf('factor')!==-1 || q.indexOf('important')!==-1){
+    if (context && context.contributions && context.contributions[0]){
+      return 'For your most recent analysis, '+context.contributions[0].feature+' had the largest influence, with a simulated contribution of '+(context.contributions[0].contribution>0?'+':'')+context.contributions[0].contribution.toFixed(3)+'.';
+    }
+    return "Run an analysis first and I'll be able to tell you which parameter influenced that specific result the most.";
+  }
+  if (q.indexOf('explain this')!==-1 || (q.indexOf('simple')!==-1 && q.indexOf('explain')!==-1)){
+    if (context){
+      const topLabel = (context.contributions && context.contributions[0]) ? context.contributions[0].feature.toLowerCase() : 'a few key readings';
+      return 'In plain terms: your sample came back "'+context.waterQuality+'" with a WQI score of '+context.confidence+'%, mostly because of '+topLabel+'.';
+    }
+    return "Once you've run an analysis, ask me again and I'll break the result down in plain language.";
+  }
+  if (q.indexOf('treatment')!==-1){
+    if (context && context.treatment){
+      const t = context.treatment;
+      const additionalPart = (t.additional && t.additional!=='\u2014') ? (', with '+t.additional+' as a secondary step,') : '';
+      return 'For this result, the recommended treatment is '+t.primary+additionalPart+' because '+t.reason+' Expected outcome: '+t.expectedImprovement;
+    }
+    return "Open a specific analysis first and I'll walk you through why that treatment was recommended.";
+  }
+  for (let i=0;i<ASSISTANT_QA.length;i++){
+    const entry = ASSISTANT_QA[i];
+    for (let j=0;j<entry.k.length;j++){ if (q.indexOf(entry.k[j])!==-1) return entry.a; }
+  }
+  return "This preview's assistant uses simple rule-based answers for a few common questions (try one of the suggestions below). The real app connects this to a locally-hosted LLM (Ollama) grounded in your actual analysis.";
+}
+function getLatestContext(){
+  const user = currentUser();
+  if (!user) return null;
+  const history = getHistory(user.id);
+  if (history.length===0) return null;
+  const latest = history[0];
+  return {waterQuality:latest.result.water_quality, confidence:latest.result.confidence, contributions:latest.contributions};
+}
+function getThreads(userId){ return LS.get('aqua_threads_'+userId, []); }
+function setThreads(userId, threads){ LS.set('aqua_threads_'+userId, threads); }
+function newThread(){
+  return { id: uid(), title: 'New chat', messages: [{role:'assistant', text:'Ask me about water quality in general, or about your most recent analysis.'}], updatedAt: new Date().toISOString() };
+}
+let activeThreadId = null;
+let chatSidebarCollapsed = false;
+let chatSearchQuery = '';
+
+function ensureActiveThread(){
+  const user = currentUser();
+  if (!user) return null;
+  let threads = getThreads(user.id);
+  if (threads.length===0){
+    const t = newThread();
+    threads = [t];
+    setThreads(user.id, threads);
+    activeThreadId = t.id;
+  }
+  if (!activeThreadId || !threads.find(t=>t.id===activeThreadId)){
+    activeThreadId = threads[0].id;
+  }
+  return threads;
+}
+function getActiveThread(){
+  const user = currentUser();
+  const threads = getThreads(user.id);
+  return threads.find(t=>t.id===activeThreadId) || threads[0];
+}
+function chatBubbleHTML(m){
+  const base = 'text-sm rounded-lg px-3 py-2 max-w-[85%]';
+  if (m.role==='user') return '<div class="'+base+' ml-auto text-white" style="background:var(--blue-500)">'+esc(m.text)+'</div>';
+  return '<div class="'+base+' flex items-start gap-2" style="background:var(--sand-100);color:var(--navy-950)">'+
+    '<span style="margin-top:1px;color:var(--aqua-600)">'+robotMark(14,'currentColor')+'</span><span>'+esc(m.text)+'</span></div>';
+}
+const SUGGESTED = ['What does pH mean?','Why is turbidity important?','Which parameter affected my result most?','Explain this prediction simply.','What is SHAP?','What is LIME?'];
+
+function threadListHTML(threads){
+  const q = chatSearchQuery.trim().toLowerCase();
+  const filtered = q ? threads.filter(t=>t.title.toLowerCase().includes(q)) : threads;
+  if (filtered.length===0){
+    return '<p class="text-xs px-3 py-6 text-center" style="color:rgba(11,27,43,0.4)">No conversations match "'+esc(chatSearchQuery)+'".</p>';
+  }
+  return filtered.map(function(t){
+    const active = t.id===activeThreadId;
+    return '<div data-thread-id="'+t.id+'" class="group/thread flex items-center gap-1.5 rounded-lg px-2.5 py-2 cursor-pointer text-sm" style="'+(active?'background:rgba(45,110,158,0.1);color:var(--blue-600);font-weight:500':'color:rgba(11,27,43,0.75)')+'">'+
+      '<span class="flex-1 truncate">'+esc(t.title)+'</span>'+
+      '<button type="button" data-delete-thread="'+t.id+'" aria-label="Delete conversation" class="shrink-0 text-xs opacity-0 group-hover/thread:opacity-100" style="color:rgba(11,27,43,0.4);padding:2px 5px;border-radius:4px;">\u2715</button>'+
+    '</div>';
+  }).join('');
+}
+function assistantPageHTML(){
+  const user = currentUser();
+  const threads = ensureActiveThread();
+  const active = getActiveThread();
+  const latest = getLatestContext();
+
+  return topbarHTML('Aqua Assistant', latest ? 'Grounded in your latest analysis result.' : 'Ask a general question to get started.')+
+  '<div class="p-4 md:p-8">'+
+  '<div class="panel overflow-hidden flex" style="height:560px;max-width:960px">'+
+    (chatSidebarCollapsed ? '' :
+    '<div class="shrink-0 flex flex-col" style="width:220px;border-right:1px solid rgba(11,27,43,0.08);background:var(--sand-50)">'+
+      '<div class="p-3" style="border-bottom:1px solid rgba(11,27,43,0.08)">'+
+        '<button type="button" id="new-thread-btn" class="btn-secondary w-full justify-center text-xs py-1.5">+ New chat</button>'+
+      '</div>'+
+      '<div class="p-2.5" style="border-bottom:1px solid rgba(11,27,43,0.08)">'+
+        '<div class="relative"><input id="thread-search" value="'+esc(chatSearchQuery)+'" class="field-input text-xs" style="padding-left:28px" placeholder="Search conversations"/>'+
+        '<span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:rgba(11,27,43,0.35);font-size:12px;" aria-hidden="true">\u2315</span></div>'+
+      '</div>'+
+      '<div id="thread-list" class="flex-1 overflow-y-auto p-2 space-y-0.5">'+threadListHTML(threads)+'</div>'+
+    '</div>')+
+    '<div class="flex-1 min-w-0 flex flex-col">'+
+      '<div class="flex items-center justify-between px-4 py-2.5" style="border-bottom:1px solid rgba(11,27,43,0.08)">'+
+        '<button type="button" id="toggle-sidebar-btn" aria-label="'+(chatSidebarCollapsed?'Show':'Hide')+' chat history" class="text-sm" style="color:rgba(11,27,43,0.5)">'+(chatSidebarCollapsed?'\u2630 History':'\u00AB Hide')+'</button>'+
+        '<span class="text-xs font-mono truncate max-w-[50%]" style="color:rgba(11,27,43,0.4)">'+esc(active.title)+'</span>'+
+      '</div>'+
+      '<div id="chat-log" class="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">'+active.messages.map(chatBubbleHTML).join('')+'</div>'+
+      '<div class="px-4 flex flex-wrap gap-1.5 pb-2">'+SUGGESTED.map(function(q){ return '<button type="button" data-suggest="'+esc(q)+'" class="text-xs rounded-full px-2.5 py-1" style="border:1px solid rgba(11,27,43,0.15);color:rgba(11,27,43,0.65)">'+q+'</button>'; }).join('')+'</div>'+
+      '<form id="chat-form" class="flex items-center gap-2 px-4 py-3" style="border-top:1px solid rgba(11,27,43,0.08)">'+
+        '<input id="chat-input" class="field-input flex-1" placeholder="Ask about water quality or your result\u2026"/>'+
+        '<button type="submit" class="btn-primary px-3">Send</button>'+
+      '</form>'+
+    '</div>'+
+  '</div>'+
+  '</div>';
+}
+function sendChat(text){
+  const message = text.trim();
+  if (!message) return;
+  const user = currentUser();
+  if (!user) return;
+  const threads = ensureActiveThread();
+  const thread = threads.find(t=>t.id===activeThreadId);
+  thread.messages.push({role:'user', text:message});
+  if (thread.title==='New chat') thread.title = message.length>36 ? message.slice(0,36)+'\u2026' : message;
+  const context = getLatestContext();
+  const reply = assistantAnswer(message, context);
+  thread.messages.push({role:'assistant', text:reply});
+  thread.updatedAt = new Date().toISOString();
+  setThreads(user.id, threads);
+  if (route.view==='assistant') render();
+}
+
+function askAboutAnalysis(analysisId, question){
+  const user = currentUser();
+  if (!user) return;
+  const threads = getThreads(user.id);
+  const t = newThread();
+  t.title = question.length>36 ? question.slice(0,36)+'\u2026' : question;
+  t.messages = [t.messages[0], {role:'user', text:question}];
+  const context = getContextForAnalysis(analysisId);
+  const reply = assistantAnswer(question, context);
+  t.messages.push({role:'assistant', text:reply});
+  t.updatedAt = new Date().toISOString();
+  threads.unshift(t);
+  setThreads(user.id, threads);
+  activeThreadId = t.id;
+  navigate('assistant');
+}
+
+/* ---------- event delegation ---------- */
+document.addEventListener('click', function(e){
+  if (openHistoryMenuId && !e.target.closest('[data-menu-toggle]') && !e.target.closest('[data-menu-root]')){
+    openHistoryMenuId = null;
+    if (route.view==='history') render();
+  }
+  const navEl = e.target.closest('[data-nav]');
+  if (navEl){
+    e.preventDefault();
+    if (navEl.dataset.nav==='compare' && navEl.dataset.param){ compareSelection = [navEl.dataset.param]; }
+    navigate(navEl.dataset.nav, navEl.dataset.param);
+    return;
+  }
+  const scrollBtn = e.target.closest('[data-scroll-to]');
+  if (scrollBtn){
+    e.preventDefault();
+    const anchor = document.getElementById(scrollBtn.dataset.scrollTo);
+    if (anchor) anchor.scrollIntoView({behavior:'smooth', block:'start'});
+    return;
+  }
+  const wqiToggle = e.target.closest('[data-toggle-wqi-table]');
+  if (wqiToggle){ wqiTableOpen = !wqiTableOpen; render(); return; }
+  const askBtn = e.target.closest('[data-ask]');
+  if (askBtn){ askAboutAnalysis(askBtn.dataset.ask, askBtn.dataset.question); return; }
+  const closeSlide = e.target.closest('#close-slideshow-btn');
+  if (closeSlide){ const s=getSlideshowState(); s.closed=true; setSlideshowState(s); render(); return; }
+  const showSlide = e.target.closest('#show-slideshow-btn');
+  if (showSlide){ const s=getSlideshowState(); s.closed=false; setSlideshowState(s); render(); return; }
+  const slideDot = e.target.closest('[data-slide-index]');
+  if (slideDot){ const s=getSlideshowState(); s.index=Number(slideDot.dataset.slideIndex); s.closed=false; setSlideshowState(s); render(); return; }
+  const menuToggle = e.target.closest('[data-menu-toggle]');
+  if (menuToggle){ openHistoryMenuId = (openHistoryMenuId===menuToggle.dataset.menuToggle) ? null : menuToggle.dataset.menuToggle; render(); return; }
+  const compareFromBtn = e.target.closest('[data-compare-from]');
+  if (compareFromBtn){ compareSelection = [compareFromBtn.dataset.compareFrom]; openHistoryMenuId=null; navigate('compare'); return; }
+  const renameBtn = e.target.closest('[data-rename]');
+  if (renameBtn){
+    const user = currentUser();
+    const a = getHistory(user.id).find(x=>x.id===renameBtn.dataset.rename);
+    if (a){ openHistoryMenuId=null; openModal(renameModalHTML(a)); document.getElementById('rename-input').focus(); }
+    return;
+  }
+  const renameSaveBtn = e.target.closest('[data-rename-save]');
+  if (renameSaveBtn){
+    const user = currentUser();
+    const history = getHistory(user.id);
+    const a = history.find(x=>x.id===renameSaveBtn.dataset.renameSave);
+    const val = document.getElementById('rename-input').value.trim();
+    if (a) a.label = val || 'Water analysis';
+    setHistory(user.id, history);
+    closeModal(); render();
+    return;
+  }
+  const deleteBtn = e.target.closest('[data-delete-analysis]');
+  if (deleteBtn){
+    const user = currentUser();
+    const a = getHistory(user.id).find(x=>x.id===deleteBtn.dataset.deleteAnalysis);
+    if (a){ openHistoryMenuId=null; openModal(deleteModalHTML(a)); }
+    return;
+  }
+  const deleteConfirmBtn = e.target.closest('[data-delete-confirm]');
+  if (deleteConfirmBtn){
+    const user = currentUser();
+    const history = getHistory(user.id).filter(x=>x.id!==deleteConfirmBtn.dataset.deleteConfirm);
+    setHistory(user.id, history);
+    closeModal();
+    showToast('Analysis deleted.', 'success');
+    render();
+    return;
+  }
+  const modalCancel = e.target.closest('[data-modal-cancel]');
+  if (modalCancel){ closeModal(); return; }
+  const modalBackdrop = e.target.closest('[data-modal-backdrop]');
+  if (modalBackdrop && e.target===modalBackdrop){ closeModal(); return; }
+  const modeBtn = e.target.closest('[data-mode]');
+  if (modeBtn){ explainMode = modeBtn.dataset.mode; render(); return; }
+  const suggestBtn = e.target.closest('[data-suggest]');
+  if (suggestBtn){ sendChat(suggestBtn.dataset.suggest); return; }
+  const logoutBtn = e.target.closest('#logout-btn');
+  if (logoutBtn){ setSession(null); navigate('login'); return; }
+  const clearHistBtn = e.target.closest('#clear-history-btn');
+  if (clearHistBtn){
+    const user = currentUser();
+    setHistory(user.id, []);
+    showToast('Local analysis history cleared.', 'success');
+    render();
+    return;
+  }
+  const whyBtn = e.target.closest('#why-btn');
+  if (whyBtn){
+    const anchor = document.getElementById('explanation-anchor');
+    if (anchor) anchor.scrollIntoView({behavior:'smooth', block:'start'});
+    return;
+  }
+  const deleteThreadBtn = e.target.closest('[data-delete-thread]');
+  if (deleteThreadBtn){
+    e.stopPropagation();
+    const user = currentUser();
+    let threads = getThreads(user.id).filter(function(t){ return t.id!==deleteThreadBtn.dataset.deleteThread; });
+    if (threads.length===0) threads = [newThread()];
+    setThreads(user.id, threads);
+    if (activeThreadId===deleteThreadBtn.dataset.deleteThread) activeThreadId = threads[0].id;
+    render();
+    return;
+  }
+  const threadRow = e.target.closest('[data-thread-id]');
+  if (threadRow){
+    activeThreadId = threadRow.dataset.threadId;
+    render();
+    return;
+  }
+  const newThreadBtn = e.target.closest('#new-thread-btn');
+  if (newThreadBtn){
+    const user = currentUser();
+    const threads = getThreads(user.id);
+    const t = newThread();
+    threads.unshift(t);
+    setThreads(user.id, threads);
+    activeThreadId = t.id;
+    render();
+    return;
+  }
+  const toggleSidebarBtn = e.target.closest('#toggle-sidebar-btn');
+  if (toggleSidebarBtn){
+    chatSidebarCollapsed = !chatSidebarCollapsed;
+    render();
+    return;
+  }
+});
+document.addEventListener('input', function(e){
+  if (e.target && e.target.id==='history-search'){
+    historySearchQuery = e.target.value;
+    render();
+    const el = document.getElementById('history-search');
+    if (el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    return;
+  }
+  if (e.target && e.target.id==='thread-search'){
+    chatSearchQuery = e.target.value;
+    const list = document.getElementById('thread-list');
+    if (list){
+      const threads = getThreads(currentUser().id);
+      list.innerHTML = threadListHTML(threads);
+    }
+  }
+});
+document.addEventListener('change', function(e){
+  const cb = e.target.closest('[data-compare]');
+  if (cb){
+    const id = cb.dataset.compare;
+    if (cb.checked){
+      compareSelection.push(id);
+      if (compareSelection.length > 2) compareSelection = [compareSelection[1], id];
+    } else {
+      compareSelection = compareSelection.filter(function(x){ return x!==id; });
+    }
+    render();
+  }
+});
+document.addEventListener('submit', function(e){
+  if (e.target && e.target.id==='chat-form'){
+    e.preventDefault();
+    const input = document.getElementById('chat-input');
+    sendChat(input.value);
+    input.value='';
+  }
+});
+
+/* ---------- post-render attach ---------- */
+function attachShell(){
+  if (route.view==='new-analysis') attachNewAnalysisHandlers();
+  const log = document.getElementById('chat-log');
+  if (log) log.scrollTop = log.scrollHeight;
+}
+const _origRender = render;
+render = function(){
+  _origRender();
+  attachShell();
+  renderToast();
+};
+
+render();
+</script>
+</body>
+</html>
