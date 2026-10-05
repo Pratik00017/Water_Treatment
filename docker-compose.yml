@@ -22,11 +22,11 @@
     environment:
       OLLAMA_HOST: http://ollama:11434
 
-      MYSQL_HOST: host.docker.internal
-      MYSQL_PORT: 3306
-      MYSQL_USER: aquaxai_user
-      MYSQL_PASSWORD: AD21
-      MYSQL_DATABASE: aquaxai
+      MYSQL_HOST: ${MYSQL_HOST}
+      MYSQL_PORT: ${MYSQL_PORT}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
 
     extra_hosts:
       - "host.docker.internal:host-gateway"
