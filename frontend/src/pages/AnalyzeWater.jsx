@@ -16,7 +16,7 @@ import { analyzeWater } from "../services/api";
 ========================================================= */
 
 const DEFAULT_FORM = {
-  country: "India",
+  country: "Canada",
   waterbodyType: "River",
   ph: "7.2",
   temperature: "25",

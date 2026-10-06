@@ -12,12 +12,11 @@ def load_dataset():
             f"Dataset not found at: {DATA_PATH}"
         )
 
-    print("Loading dataset...")
+    print("Loading full dataset...")
 
     df = pd.read_csv(
         DATA_PATH,
-        low_memory=False,
-        nrows=200000
+        low_memory=False
     )
 
     print("\nDataset Loaded Successfully")
@@ -41,6 +40,20 @@ def load_dataset():
     print(
         missing[missing > 0]
         .sort_values(ascending=False)
+    )
+
+    print("\nCountry Distribution:")
+    print(
+        df["Country"]
+        .value_counts()
+        .sort_index()
+    )
+
+    print("\nTarget Distribution:")
+    print(
+        df["CCME_WQI"]
+        .value_counts()
+        .sort_index()
     )
 
     return df

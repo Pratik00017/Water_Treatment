@@ -1,13 +1,39 @@
 ﻿services:
 
+  postgres:
+    image: postgres:16
+    container_name: aqua_postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aquaxai
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d aquaxai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+
   ollama:
     image: ollama/ollama:latest
     container_name: aqua_ollama
+    restart: unless-stopped
+
     ports:
       - "11434:11434"
+
     volumes:
       - ollama_storage:/root/.ollama
-    restart: always
+
 
   backend:
     build:
@@ -15,18 +41,14 @@
       dockerfile: Dockerfile
 
     container_name: aqua_backend
+    restart: unless-stopped
 
     ports:
       - "8000:8000"
 
     environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@postgres:5432/aquaxai
       OLLAMA_HOST: http://ollama:11434
-
-      MYSQL_HOST: ${MYSQL_HOST}
-      MYSQL_PORT: ${MYSQL_PORT}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
 
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -36,9 +58,11 @@
       - ./dataset:/app/dataset
 
     depends_on:
-      - ollama
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
 
-    restart: always
 
   frontend:
     build:
@@ -46,6 +70,7 @@
       dockerfile: Dockerfile
 
     container_name: aqua_frontend
+    restart: unless-stopped
 
     ports:
       - "80:80"
@@ -53,8 +78,7 @@
     depends_on:
       - backend
 
-    restart: always
-
 
 volumes:
+  postgres_data:
   ollama_storage:

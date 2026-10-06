@@ -8,19 +8,110 @@ const API_URL =
   process.env.REACT_APP_API_URL || '/api';
 
 /* =========================================================
+   GET LOGGED-IN USER
+   ========================================================= */
+
+const getStoredUser = () => {
+  try {
+    const storedUser =
+      localStorage.getItem('aquaxai-user');
+
+    if (!storedUser) {
+      return null;
+    }
+
+    return JSON.parse(storedUser);
+  } catch (error) {
+    console.error(
+      'Unable to read aquaxai-user:',
+      error
+    );
+
+    return null;
+  }
+};
+
+/* =========================================================
+   GET LOGGED-IN USER ID
+   Supports all possible login storage formats
+   ========================================================= */
+
+const getUserId = () => {
+  const user = getStoredUser();
+
+  if (!user) {
+    return null;
+  }
+
+  const userId =
+    user?.id ??
+    user?.user_id ??
+    user?.user?.id ??
+    user?.user?.user_id ??
+    null;
+
+  if (
+    userId === null ||
+    userId === undefined ||
+    userId === ''
+  ) {
+    return null;
+  }
+
+  return String(userId);
+};
+
+/* =========================================================
    AXIOS INSTANCE
    ========================================================= */
 
 export const api = axios.create({
   baseURL: API_URL,
   timeout: 60000,
+
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
 /* =========================================================
-   ERROR HANDLER
+   REQUEST INTERCEPTOR
+   Sends X-User-ID on every backend request
+   ========================================================= */
+
+api.interceptors.request.use(
+  (config) => {
+    const userId = getUserId();
+
+    if (!config.headers) {
+      config.headers = {};
+    }
+
+    if (userId) {
+      config.headers['X-User-ID'] = userId;
+    }
+
+    /*
+     * Useful while testing login/history.
+     */
+    console.log(
+      '[AquaXAI API]',
+      config.method?.toUpperCase(),
+      config.url,
+      'X-User-ID:',
+      userId || 'MISSING'
+    );
+
+    return config;
+  },
+
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+/* =========================================================
+   RESPONSE ERROR HANDLER
    ========================================================= */
 
 api.interceptors.response.use(
@@ -35,10 +126,6 @@ api.interceptors.response.use(
         error.response.data?.detail;
 
       let detailMessage = '';
-
-      /* -----------------------------------------
-         FASTAPI VALIDATION ERROR
-         ----------------------------------------- */
 
       if (Array.isArray(detail)) {
         detailMessage = detail
@@ -66,13 +153,7 @@ api.interceptors.response.use(
             );
           })
           .join(' | ');
-      }
-
-      /* -----------------------------------------
-         NORMAL STRING ERROR
-         ----------------------------------------- */
-
-      else if (
+      } else if (
         typeof detail === 'string'
       ) {
         detailMessage = detail;
@@ -95,6 +176,7 @@ api.interceptors.response.use(
 
         case 403:
           message =
+            detailMessage ||
             'You do not have permission to perform this action.';
           break;
 
@@ -128,13 +210,8 @@ api.interceptors.response.use(
           }
       }
 
-      error.userMessage =
-        message;
+      error.userMessage = message;
     }
-
-    /* -----------------------------------------
-       TIMEOUT
-       ----------------------------------------- */
 
     else if (
       error.code === 'ECONNABORTED'
@@ -142,10 +219,6 @@ api.interceptors.response.use(
       error.userMessage =
         'The request timed out. Please try again.';
     }
-
-    /* -----------------------------------------
-       NETWORK ERROR
-       ----------------------------------------- */
 
     else {
       error.userMessage =
@@ -197,8 +270,6 @@ export const signupUser = (
 
 /* =========================================================
    AQUA ASSISTANT
-   IMPORTANT:
-   Backend expects "question", not "message".
    ========================================================= */
 
 export const chatWithAssistant = (
@@ -223,35 +294,34 @@ export const chatWithAssistant = (
    ANALYSIS HISTORY
    ========================================================= */
 
-export const getAnalysisHistory =
-  () => {
-    return api.get(
-      '/history'
-    );
-  };
+export const getAnalysisHistory = () => {
+  return api.get('/history');
+};
 
 /* =========================================================
    OPTIONAL ENDPOINT
    ========================================================= */
 
-export const callOptionalEndpoint =
-  async (
-    envKey,
-    fallbackPath,
-    payload
-  ) => {
-    const endpoint =
-      process.env[envKey] ||
-      fallbackPath;
+export const callOptionalEndpoint = async (
+  envKey,
+  fallbackPath,
+  payload
+) => {
+  const endpoint =
+    process.env[envKey] ||
+    fallbackPath;
 
-    return api.post(
-      endpoint,
-      payload
-    );
-  };
+  return api.post(
+    endpoint,
+    payload
+  );
+};
 
 /* =========================================================
    EXPORT API URL
    ========================================================= */
 
-export { API_URL };
+export {
+  API_URL,
+  getUserId,
+};

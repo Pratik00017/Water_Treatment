@@ -8,9 +8,8 @@ import {
   Calendar,
   Eye,
   Filter,
-  Search,
-  Trash2,
   RefreshCw,
+  Search,
 } from 'lucide-react';
 
 import {
@@ -26,50 +25,15 @@ import {
   useAuth,
 } from '../context/AuthContext';
 
-/* =========================================================
-   USER STORAGE
-   MUST MATCH AnalyzeWater.jsx EXACTLY
-   ========================================================= */
-
-function getUserStorageId(user) {
-  const identity =
-    user?.email ||
-    user?.username ||
-    user?.id ||
-    user?.user_id ||
-    'guest';
-
-  return String(identity)
-    .trim()
-    .toLowerCase()
-    .replace(
-      /[^a-z0-9._-]/g,
-      '_'
-    );
-}
-
-function getHistoryKey(user) {
-  return (
-    `aquaxai-history-` +
-    getUserStorageId(user)
-  );
-}
-
-function getLatestKey(user) {
-  return (
-    `aquaxai-latest-analysis-` +
-    getUserStorageId(user)
-  );
-}
+import {
+  getAnalysisHistory,
+} from '../services/api';
 
 /* =========================================================
-   SAFE TEXT
+   HELPERS
    ========================================================= */
 
-function safeText(
-  value,
-  fallback = '-'
-) {
+function safeText(value, fallback = '-') {
   if (
     value === null ||
     value === undefined ||
@@ -88,17 +52,12 @@ function safeText(
 
   if (Array.isArray(value)) {
     return value
-      .map(
-        (item) =>
-          safeText(item, '')
-      )
+      .map((item) => safeText(item, ''))
       .filter(Boolean)
       .join(', ');
   }
 
-  if (
-    typeof value === 'object'
-  ) {
+  if (typeof value === 'object') {
     return (
       value.label ||
       value.name ||
@@ -115,68 +74,87 @@ function safeText(
   return fallback;
 }
 
-/* =========================================================
-   PREDICTION
-   ========================================================= */
-
-function getPrediction(
-  item
-) {
-  const prediction =
-    item?.prediction;
+function getPrediction(item) {
+  const prediction = item?.prediction;
 
   if (
     prediction &&
-    typeof prediction ===
-      'object'
+    typeof prediction === 'object'
   ) {
     return safeText(
       prediction.label ||
-      prediction.status ||
-      prediction.prediction ||
-      prediction.water_quality ||
-      prediction.result,
+        prediction.status ||
+        prediction.prediction ||
+        prediction.water_quality ||
+        prediction.result,
       'Unknown'
     );
   }
 
   return safeText(
     prediction ||
-    item?.water_quality ||
-    item?.classification ||
-    item?.status,
+      item?.water_quality ||
+      item?.classification ||
+      item?.status,
     'Unknown'
   );
 }
 
-/* =========================================================
-   DATE
-   ========================================================= */
+function getStatus(item) {
+  const status = safeText(
+    item?.status ||
+      getPrediction(item),
+    'Unknown'
+  );
 
-function getDate(
-  item
-) {
-  const value =
-    item?.created_at ||
-    item?.createdAt ||
-    item?.date;
-
-  if (!value) {
-    return 'Unknown';
-  }
-
-  const date =
-    new Date(value);
+  const lower = status.toLowerCase();
 
   if (
-    Number.isNaN(
-      date.getTime()
-    )
+    lower.includes('critical') ||
+    lower.includes('unsafe')
   ) {
-    return safeText(
-      value,
-      'Unknown'
-    );
+    return 'Critical';
+  }
+
+  if (
+    lower.includes('treatment') ||
+    lower.includes('poor') ||
+    lower.includes('warning')
+  ) {
+    return 'Needs Treatment';
+  }
+
+  if (
+    lower.includes('safe') ||
+    lower.includes('good') ||
+    lower.includes('excellent')
+  ) {
+    return 'Safe';
+  }
+
+  return status;
+}
+
+function getDateValue(item) {
+  return (
+    item?.created_at ||
+    item?.createdAt ||
+    item?.date ||
+    null
+  );
+}
+
+function formatDate(item) {
+  const value = getDateValue(item);
+
+  if (!value) {
+    return '-';
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return safeText(value, '-');
   }
 
   return date.toLocaleString(
@@ -191,24 +169,66 @@ function getDate(
   );
 }
 
-/* =========================================================
-   SAMPLE NAME
-   ========================================================= */
+function getSampleName(item) {
+  const parameters =
+    item?.parameters ||
+    item?.input_data ||
+    {};
 
-function getSampleName(
-  item
-) {
   return safeText(
     item?.sample_name ||
-    item?.sampleName ||
-    item?.sample ||
-    item?.input_data?.Sample ||
-    item?.input_data?.Sample_Name ||
-    item?.input_data?.Waterbody_Type ||
-    item?.Waterbody_Type ||
-    item?.waterbody_type,
+      item?.sampleName ||
+      item?.sample ||
+      parameters?.Sample ||
+      parameters?.Sample_Name ||
+      parameters?.Waterbody_Type ||
+      parameters?.Waterbody_Type ||
+      'Water Sample',
     'Water Sample'
   );
+}
+
+function getParameters(item) {
+  return (
+    item?.parameters ||
+    item?.input_data ||
+    {}
+  );
+}
+
+function getParameter(
+  parameters,
+  names
+) {
+  for (const name of names) {
+    if (
+      parameters?.[name] !==
+        undefined &&
+      parameters?.[name] !== null &&
+      parameters?.[name] !== ''
+    ) {
+      return parameters[name];
+    }
+  }
+
+  return null;
+}
+
+function getUserId(user) {
+  const id =
+    user?.id ??
+    user?.user_id ??
+    null;
+
+  if (
+    id === null ||
+    id === undefined ||
+    id === ''
+  ) {
+    return null;
+  }
+
+  return String(id);
 }
 
 /* =========================================================
@@ -216,156 +236,165 @@ function getSampleName(
    ========================================================= */
 
 export default function History() {
-  const navigate =
-    useNavigate();
+  const navigate = useNavigate();
 
-  const { user } =
-    useAuth();
+  const { user } = useAuth();
 
-  const [
-    history,
-    setHistory,
-  ] = useState([]);
+  const [history, setHistory] =
+    useState([]);
 
-  const [
-    search,
-    setSearch,
-  ] = useState('');
+  const [search, setSearch] =
+    useState('');
 
-  const [
-    statusFilter,
-    setStatusFilter,
-  ] = useState(
-    'All Status'
-  );
+  const [statusFilter, setStatusFilter] =
+    useState('All Status');
 
-  const [
-    loading,
-    setLoading,
-  ] = useState(true);
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState('');
 
   /* =======================================================
-     CURRENT USER KEY
+     LOAD REAL BACKEND HISTORY
      ======================================================= */
 
-  const historyKey =
-    getHistoryKey(user);
-
-  const latestKey =
-    getLatestKey(user);
-
-  /* =======================================================
-     LOAD HISTORY
-     ======================================================= */
-
-  const loadHistory =
-    () => {
+  const loadHistory = async () => {
+    try {
       setLoading(true);
+      setError('');
 
-      try {
-        if (!user) {
-          setHistory([]);
-          return;
-        }
+      /*
+       * Authentication is required because
+       * backend /history filters by X-User-ID.
+       */
+      const userId = getUserId(user);
 
-        const saved =
-          localStorage.getItem(
-            historyKey
-          );
-
-        if (!saved) {
-          setHistory([]);
-          return;
-        }
-
-        const parsed =
-          JSON.parse(saved);
-
-        if (
-          !Array.isArray(
-            parsed
-          )
-        ) {
-          setHistory([]);
-          return;
-        }
-
-        setHistory(
-          parsed
-        );
-
-      } catch (error) {
-        console.error(
-          'Failed to load analysis history:',
-          error
-        );
-
+      if (!user) {
         setHistory([]);
-
-      } finally {
-        setLoading(false);
+        setError(
+          'Please sign in to view your analysis history.'
+        );
+        return;
       }
-    };
+
+      if (!userId) {
+        setHistory([]);
+        setError(
+          'Your account ID is missing. Please sign out and sign in again.'
+        );
+        return;
+      }
+
+      /*
+       * getAnalysisHistory() uses the Axios interceptor
+       * from services/api.js.
+       *
+       * The interceptor reads aquaxai-user and sends:
+       *
+       * X-User-ID: <logged-in-user-id>
+       */
+      const response =
+        await getAnalysisHistory();
+
+      const backendHistory =
+        response?.data?.analyses;
+
+      const records =
+        Array.isArray(backendHistory)
+          ? backendHistory
+          : [];
+
+      setHistory(records);
+
+      /*
+       * The backend is now the source of truth.
+       */
+      console.log(
+        'AquaXAI backend history:',
+        records
+      );
+    } catch (err) {
+      console.error(
+        'Failed to load analysis history:',
+        err
+      );
+
+      setHistory([]);
+
+      setError(
+        err?.userMessage ||
+          err?.response?.data?.detail ||
+          'Unable to load your analysis history.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   /* =======================================================
-     LOAD WHEN USER CHANGES
+     INITIAL LOAD
      ======================================================= */
 
   useEffect(() => {
     loadHistory();
   }, [
-    user?.email,
     user?.id,
     user?.user_id,
+    user?.email,
   ]);
 
   /* =======================================================
-     FILTER
+     FILTER HISTORY
      ======================================================= */
 
   const filteredHistory =
     useMemo(() => {
+      const query =
+        search.trim().toLowerCase();
 
       return history.filter(
         (item) => {
-
           const prediction =
-            getPrediction(
-              item
-            );
+            getPrediction(item);
 
           const sample =
-            getSampleName(
-              item
-            );
+            getSampleName(item);
 
-          const searchable =
-            [
-              prediction,
-              sample,
-              item?.summary,
-              item?.explanation,
-            ]
-              .map(
-                (value) =>
-                  safeText(
-                    value,
-                    ''
-                  )
-              )
-              .join(' ')
-              .toLowerCase();
+          const status =
+            getStatus(item);
+
+          const parameters =
+            getParameters(item);
+
+          const searchable = [
+            prediction,
+            sample,
+            status,
+            parameters?.Country,
+            parameters?.Waterbody_Type,
+            parameters?.pH,
+            parameters?.Temperature,
+            parameters?.Nitrate,
+            parameters?.Ammonia,
+            parameters?.Nitrogen,
+            parameters?.BOD,
+            parameters?.DO,
+          ]
+            .map((value) =>
+              safeText(value, '')
+            )
+            .join(' ')
+            .toLowerCase();
 
           const searchMatch =
-            !search ||
-            searchable.includes(
-              search.toLowerCase()
-            );
+            !query ||
+            searchable.includes(query);
 
           const statusMatch =
             statusFilter ===
               'All Status' ||
-            prediction
+            status
               .toLowerCase()
               .includes(
                 statusFilter.toLowerCase()
@@ -377,7 +406,6 @@ export default function History() {
           );
         }
       );
-
     }, [
       history,
       search,
@@ -388,248 +416,122 @@ export default function History() {
      VIEW ANALYSIS
      ======================================================= */
 
-  const viewAnalysis =
-    (item) => {
+  const viewAnalysis = (item) => {
+    if (!item) {
+      return;
+    }
 
-      if (!item) {
-        return;
+    /*
+     * Save the selected backend record as the
+     * current result for compatibility with
+     * AnalysisResult.jsx.
+     */
+    try {
+      const latestUserId =
+        getUserId(user);
+
+      const userKey =
+        latestUserId || 'guest';
+
+      localStorage.setItem(
+        `aquaxai-latest-analysis-${userKey}`,
+        JSON.stringify(item)
+      );
+
+      localStorage.setItem(
+        `aquaxai-analysis-result-${userKey}`,
+        JSON.stringify(item)
+      );
+    } catch (storageError) {
+      console.error(
+        'Unable to cache selected analysis:',
+        storageError
+      );
+    }
+
+    /*
+     * Also pass the actual backend object
+     * through React Router state.
+     */
+    navigate(
+      '/analysis-result',
+      {
+        state: {
+          analysis: item,
+          result: item,
+          data: item,
+        },
       }
-
-      try {
-        /*
-         * IMPORTANT:
-         * Save under the SAME user-specific
-         * latest key used by AnalyzeWater.
-         */
-
-        localStorage.setItem(
-          latestKey,
-          JSON.stringify(
-            item
-          )
-        );
-
-        /*
-         * Remove the OLD shared key so another
-         * account cannot accidentally read it.
-         */
-
-        localStorage.removeItem(
-          'aquaxai-latest-analysis'
-        );
-
-        navigate(
-          '/analysis-result'
-        );
-
-      } catch (error) {
-        console.error(
-          'Unable to open analysis:',
-          error
-        );
-      }
-    };
+    );
+  };
 
   /* =======================================================
-     DELETE ONE
+     EMPTY MESSAGE
      ======================================================= */
 
-  const deleteAnalysis =
-    (item) => {
+  const hasHistory =
+    history.length > 0;
 
-      if (!user) {
-        return;
-      }
-
-      const updated =
-        history.filter(
-          (historyItem) =>
-            historyItem !== item
-        );
-
-      try {
-        localStorage.setItem(
-          historyKey,
-          JSON.stringify(
-            updated
-          )
-        );
-
-        setHistory(
-          updated
-        );
-
-        /*
-         * If the deleted analysis was also
-         * the latest analysis, remove the
-         * account-specific latest result.
-         */
-
-        const latest =
-          localStorage.getItem(
-            latestKey
-          );
-
-        if (
-          latest &&
-          JSON.stringify(
-            item
-          ) === latest
-        ) {
-          localStorage.removeItem(
-            latestKey
-          );
-        }
-
-      } catch (error) {
-        console.error(
-          'Unable to delete analysis:',
-          error
-        );
-      }
-    };
-
-  /* =======================================================
-     CLEAR ALL
-     ======================================================= */
-
-  const clearAllHistory =
-    () => {
-
-      if (!user) {
-        return;
-      }
-
-      const confirmed =
-        window.confirm(
-          'Delete all water analysis history for this account?'
-        );
-
-      if (!confirmed) {
-        return;
-      }
-
-      try {
-
-        /*
-         * Remove CURRENT ACCOUNT history.
-         */
-
-        localStorage.removeItem(
-          historyKey
-        );
-
-        /*
-         * Remove CURRENT ACCOUNT latest.
-         */
-
-        localStorage.removeItem(
-          latestKey
-        );
-
-        /*
-         * Remove old shared keys too.
-         */
-
-        localStorage.removeItem(
-          'aquaxai-history'
-        );
-
-        localStorage.removeItem(
-          'aquaxai-latest-analysis'
-        );
-
-        localStorage.removeItem(
-          'aquaxai-reports'
-        );
-
-        localStorage.removeItem(
-          'aquaxai-saved-reports'
-        );
-
-        setHistory([]);
-
-      } catch (error) {
-        console.error(
-          'Unable to clear history:',
-          error
-        );
-      }
-    };
-
-  /* =======================================================
-     RENDER
-     ======================================================= */
+  const hasFilteredHistory =
+    filteredHistory.length > 0;
 
   return (
     <>
-
-      {/* =================================================
+      {/* ===================================================
           HEADER
-          ================================================= */}
+          =================================================== */}
 
       <div className="page-head">
 
         <div>
-
           <h1>
             Analysis History
           </h1>
 
           <p>
-            View and manage your previous
+            View all your previous
             water quality analyses.
           </p>
-
         </div>
 
-        {history.length >
-          0 && (
-          <button
-            type="button"
-            onClick={
-              clearAllHistory
+        <button
+          type="button"
+          onClick={loadHistory}
+          disabled={loading}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '7px',
+            padding: '10px 14px',
+            border:
+              '1px solid #dbe5ef',
+            borderRadius: '8px',
+            background: '#ffffff',
+            color: '#31506b',
+            fontSize: '13px',
+            fontWeight: 700,
+            cursor: loading
+              ? 'not-allowed'
+              : 'pointer',
+          }}
+        >
+          <RefreshCw
+            size={15}
+            className={
+              loading
+                ? 'history-spin'
+                : ''
             }
-            style={{
-              display:
-                'inline-flex',
-              alignItems:
-                'center',
-              gap:
-                '7px',
-              padding:
-                '10px 14px',
-              border:
-                '1px solid #fecaca',
-              borderRadius:
-                '8px',
-              background:
-                '#ffffff',
-              color:
-                '#dc2626',
-              fontSize:
-                '13px',
-              fontWeight:
-                700,
-              cursor:
-                'pointer',
-            }}
-          >
+          />
 
-            <Trash2
-              size={15}
-            />
-
-            Clear All History
-
-          </button>
-        )}
+          Refresh
+        </button>
 
       </div>
 
-      {/* =================================================
-          CARD
-          ================================================= */}
+      {/* ===================================================
+          MAIN CARD
+          =================================================== */}
 
       <Card>
 
@@ -639,179 +541,111 @@ export default function History() {
 
         <div className="toolbar">
 
-          {/* SEARCH */}
-
           <div className="search-box">
 
-            <Search
-              size={16}
-            />
+            <Search size={16} />
 
             <input
               type="text"
               placeholder="Search analyses..."
-              value={
-                search
-              }
-              onChange={(e) =>
+              value={search}
+              onChange={(event) =>
                 setSearch(
-                  e.target.value
+                  event.target.value
                 )
               }
             />
 
           </div>
 
-          {/* FILTER */}
-
-          <button
-            type="button"
+          <div
             className="filter-button"
             style={{
-              display:
-                'flex',
-              alignItems:
-                'center',
-              gap:
-                '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
             }}
           >
 
-            <Filter
-              size={15}
-            />
+            <Filter size={15} />
 
             <select
-              value={
-                statusFilter
-              }
-              onChange={(e) =>
+              value={statusFilter}
+              onChange={(event) =>
                 setStatusFilter(
-                  e.target.value
+                  event.target.value
                 )
               }
               style={{
-                border:
-                  'none',
+                border: 'none',
                 background:
                   'transparent',
-                outline:
-                  'none',
-                fontSize:
-                  '14px',
-                cursor:
-                  'pointer',
+                outline: 'none',
+                fontSize: '14px',
+                cursor: 'pointer',
               }}
             >
 
-              <option>
+              <option value="All Status">
                 All Status
               </option>
 
-              <option>
-                Excellent
-              </option>
-
-              <option>
-                Good
-              </option>
-
-              <option>
-                Fair
-              </option>
-
-              <option>
-                Marginal
-              </option>
-
-              <option>
-                Poor
-              </option>
-
-              <option>
+              <option value="Safe">
                 Safe
               </option>
 
-              <option>
+              <option value="Needs Treatment">
+                Needs Treatment
+              </option>
+
+              <option value="Critical">
                 Critical
               </option>
 
             </select>
 
-          </button>
-
-          {/* REFRESH */}
-
-          <button
-            type="button"
-            onClick={
-              loadHistory
-            }
-            disabled={
-              loading
-            }
-            style={{
-              marginLeft:
-                'auto',
-              width:
-                '38px',
-              height:
-                '38px',
-              display:
-                'flex',
-              alignItems:
-                'center',
-              justifyContent:
-                'center',
-              border:
-                '1px solid #dbe5ef',
-              borderRadius:
-                '8px',
-              background:
-                '#ffffff',
-              color:
-                '#4b647b',
-              cursor:
-                loading
-                  ? 'not-allowed'
-                  : 'pointer',
-            }}
-            title="Refresh history"
-          >
-
-            <RefreshCw
-              size={16}
-              className={
-                loading
-                  ? 'history-spin'
-                  : ''
-              }
-            />
-
-          </button>
+          </div>
 
         </div>
+
+        {/* =================================================
+            ERROR
+            ================================================= */}
+
+        {error && (
+          <div
+            style={{
+              margin:
+                '18px 0 0',
+              padding:
+                '12px 14px',
+              border:
+                '1px solid #fecaca',
+              borderRadius: '8px',
+              background:
+                '#fff7f7',
+              color:
+                '#b91c1c',
+              fontSize: '13px',
+            }}
+          >
+            {error}
+          </div>
+        )}
 
         {/* =================================================
             LOADING
             ================================================= */}
 
         {loading ? (
-
           <div
             style={{
-              minHeight:
-                '360px',
-              display:
-                'flex',
-              alignItems:
-                'center',
-              justifyContent:
-                'center',
-              flexDirection:
-                'column',
-              color:
-                '#64748b',
+              minHeight: '360px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexDirection: 'column',
+              color: '#64748b',
             }}
           >
 
@@ -825,41 +659,29 @@ export default function History() {
             </p>
 
           </div>
-
-        ) : filteredHistory.length ===
-          0 ? (
-
+        ) : !hasHistory ? (
           /* ===============================================
-             EMPTY
+             NO BACKEND HISTORY
              =============================================== */
 
           <div
             style={{
-              minHeight:
-                '360px',
-              display:
-                'flex',
-              flexDirection:
-                'column',
-              alignItems:
-                'center',
-              justifyContent:
-                'center',
-              textAlign:
-                'center',
-              padding:
-                '30px',
+              minHeight: '360px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textAlign: 'center',
+              padding: '30px',
             }}
           >
 
             <Calendar
-              size={48}
+              size={50}
               strokeWidth={1.5}
               style={{
-                marginBottom:
-                  '16px',
-                color:
-                  '#94a3b8',
+                marginBottom: '16px',
+                color: '#94a3b8',
               }}
             />
 
@@ -867,38 +689,78 @@ export default function History() {
               style={{
                 margin:
                   '0 0 8px',
-                color:
-                  '#0b2740',
+                color: '#0b2740',
               }}
             >
-              {history.length ===
-              0
-                ? 'No analyses found'
-                : 'No matching analyses'}
+              No analyses found
             </h3>
 
             <p
               style={{
-                margin:
-                  0,
-                color:
-                  '#64748b',
-                fontSize:
-                  '13px',
+                margin: 0,
+                color: '#64748b',
+                fontSize: '13px',
+                maxWidth: '430px',
               }}
             >
-              {history.length ===
-              0
-                ? 'This account does not have any saved water analyses yet.'
-                : 'Try changing your search or status filter.'}
+              No water analysis records
+              were returned for this
+              account. Run an analysis
+              and then refresh this page.
             </p>
 
           </div>
-
-        ) : (
-
+        ) : !hasFilteredHistory ? (
           /* ===============================================
-             TABLE
+             FILTER EMPTY
+             =============================================== */
+
+          <div
+            style={{
+              minHeight: '360px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textAlign: 'center',
+              padding: '30px',
+            }}
+          >
+
+            <Search
+              size={45}
+              strokeWidth={1.5}
+              style={{
+                marginBottom: '16px',
+                color: '#94a3b8',
+              }}
+            />
+
+            <h3
+              style={{
+                margin:
+                  '0 0 8px',
+                color: '#0b2740',
+              }}
+            >
+              No matching analyses
+            </h3>
+
+            <p
+              style={{
+                margin: 0,
+                color: '#64748b',
+                fontSize: '13px',
+              }}
+            >
+              Try changing your search
+              or status filter.
+            </p>
+
+          </div>
+        ) : (
+          /* ===============================================
+             HISTORY TABLE
              =============================================== */
 
           <div className="table-scroll">
@@ -914,11 +776,15 @@ export default function History() {
                   </th>
 
                   <th>
-                    Date & Time
+                    Date &amp; Time
                   </th>
 
                   <th>
                     Sample Name
+                  </th>
+
+                  <th>
+                    Key Parameters
                   </th>
 
                   <th>
@@ -940,33 +806,75 @@ export default function History() {
               <tbody>
 
                 {filteredHistory.map(
-                  (
-                    item,
-                    index
-                  ) => {
+                  (item, index) => {
+                    const parameters =
+                      getParameters(
+                        item
+                      );
 
                     const prediction =
                       getPrediction(
                         item
                       );
 
+                    const status =
+                      getStatus(item);
+
                     const sample =
                       getSampleName(
                         item
                       );
 
-                    const date =
-                      getDate(
-                        item
+                    const pH =
+                      getParameter(
+                        parameters,
+                        [
+                          'pH',
+                          'ph',
+                          'PH',
+                        ]
                       );
+
+                    const temperature =
+                      getParameter(
+                        parameters,
+                        [
+                          'Temperature',
+                          'temperature',
+                        ]
+                      );
+
+                    const dissolvedOxygen =
+                      getParameter(
+                        parameters,
+                        [
+                          'DO',
+                          'Dissolved_Oxygen',
+                          'DissolvedOxygen',
+                          'dissolved_oxygen',
+                        ]
+                      );
+
+                    const nitrate =
+                      getParameter(
+                        parameters,
+                        [
+                          'Nitrate',
+                          'nitrate',
+                        ]
+                      );
+
+                    const date =
+                      formatDate(item);
+
+                    const id =
+                      item?.id ??
+                      item?.analysis_id ??
+                      `${date}-${index}`;
 
                     return (
                       <tr
-                        key={
-                          item?.id ||
-                          item?.analysis_id ||
-                          `${date}-${index}`
-                        }
+                        key={String(id)}
                       >
 
                         <td>
@@ -978,7 +886,74 @@ export default function History() {
                         </td>
 
                         <td>
-                          {sample}
+                          <strong>
+                            {sample}
+                          </strong>
+                        </td>
+
+                        <td>
+                          <div
+                            style={{
+                              fontSize:
+                                '12px',
+                              lineHeight:
+                                1.7,
+                              color:
+                                '#51697f',
+                            }}
+                          >
+
+                            {pH !== null && (
+                              <div>
+                                pH:{' '}
+                                {pH}
+                              </div>
+                            )}
+
+                            {temperature !==
+                              null && (
+                              <div>
+                                Temp:{' '}
+                                {
+                                  temperature
+                                }
+                                °C
+                              </div>
+                            )}
+
+                            {dissolvedOxygen !==
+                              null && (
+                              <div>
+                                DO:{' '}
+                                {
+                                  dissolvedOxygen
+                                }
+                                mg/L
+                              </div>
+                            )}
+
+                            {nitrate !==
+                              null && (
+                              <div>
+                                Nitrate:{' '}
+                                {nitrate}
+                                mg/L
+                              </div>
+                            )}
+
+                            {pH === null &&
+                              temperature ===
+                                null &&
+                              dissolvedOxygen ===
+                                null &&
+                              nitrate ===
+                                null && (
+                                <span>
+                                  Water sample
+                                </span>
+                              )}
+
+                          </div>
                         </td>
 
                         <td>
@@ -989,7 +964,7 @@ export default function History() {
 
                           <StatusBadge
                             status={
-                              prediction
+                              status
                             }
                           />
 
@@ -997,56 +972,21 @@ export default function History() {
 
                         <td>
 
-                          <div
-                            style={{
-                              display:
-                                'flex',
-                              alignItems:
-                                'center',
-                              gap:
-                                '6px',
-                            }}
+                          <button
+                            type="button"
+                            className="table-action"
+                            onClick={() =>
+                              viewAnalysis(
+                                item
+                              )
+                            }
                           >
+                            <Eye
+                              size={14}
+                            />
 
-                            <button
-                              type="button"
-                              className="table-action"
-                              onClick={() =>
-                                viewAnalysis(
-                                  item
-                                )
-                              }
-                            >
-
-                              <Eye
-                                size={14}
-                              />
-
-                              View
-
-                            </button>
-
-                            <button
-                              type="button"
-                              className="table-action"
-                              onClick={() =>
-                                deleteAnalysis(
-                                  item
-                                )
-                              }
-                              style={{
-                                color:
-                                  '#dc2626',
-                              }}
-                            >
-
-                              <Trash2
-                                size={14}
-                              />
-
-                            </button>
-
-                          </div>
+                            View
+                          </button>
 
                         </td>
 
@@ -1060,17 +1000,15 @@ export default function History() {
             </table>
 
           </div>
-
         )}
 
       </Card>
 
-      {/* =================================================
+      {/* ===================================================
           STYLES
-          ================================================= */}
+          =================================================== */}
 
       <style>{`
-
         .history-spin {
           animation:
             historySpin
@@ -1087,65 +1025,33 @@ export default function History() {
         }
 
         .table-action {
-          display:
-            inline-flex;
-
-          align-items:
-            center;
-
-          gap:
-            5px;
-
-          border:
-            1px solid #dbe5ef;
-
-          background:
-            #ffffff;
-
-          border-radius:
-            7px;
-
-          padding:
-            7px 9px;
-
-          color:
-            #31506b;
-
-          font-size:
-            12px;
-
-          cursor:
-            pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          border: 1px solid #dbe5ef;
+          background: #ffffff;
+          border-radius: 7px;
+          padding: 7px 10px;
+          color: #31506b;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
         }
 
         .table-action:hover {
-          border-color:
-            #0878F9;
-
-          color:
-            #0878F9;
+          border-color: #0878F9;
+          color: #0878F9;
         }
 
         @media (max-width: 760px) {
-
           .toolbar {
-            flex-wrap:
-              wrap;
+            flex-wrap: wrap;
           }
 
           .search-box {
-            width:
-              100%;
+            width: 100%;
           }
-
-          .toolbar
-          > button:last-child {
-            margin-left:
-              0;
-          }
-
         }
-
       `}</style>
 
     </>
