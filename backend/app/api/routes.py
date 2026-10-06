@@ -62,17 +62,11 @@ def ensure_history_table(db: Session):
             """
             CREATE TABLE IF NOT EXISTS aqua_analysis_history (
                 id SERIAL PRIMARY KEY,
-
                 user_id INTEGER NULL,
-
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
                 sample_data TEXT NULL,
-
                 prediction VARCHAR(100) NULL,
-
                 confidence DOUBLE PRECISION NULL,
-
                 treatment TEXT NULL
             )
             """
@@ -181,54 +175,71 @@ def signup(
     db: Session = Depends(get_db),
 ):
 
-    name = request.name.strip()
-    email = request.email.lower().strip()
+    try:
 
-    if len(name) < 2:
-        raise HTTPException(
-            status_code=400,
-            detail="Name must contain at least 2 characters.",
+        name = request.name.strip()
+        email = request.email.lower().strip()
+
+        if len(name) < 2:
+            raise HTTPException(
+                status_code=400,
+                detail="Name must contain at least 2 characters.",
+            )
+
+        if len(request.password) < 6:
+            raise HTTPException(
+                status_code=400,
+                detail="Password must contain at least 6 characters.",
+            )
+
+        existing_user = (
+            db.query(User)
+            .filter(User.email == email)
+            .first()
         )
 
-    if len(request.password) < 6:
-        raise HTTPException(
-            status_code=400,
-            detail="Password must contain at least 6 characters.",
+        if existing_user:
+            raise HTTPException(
+                status_code=409,
+                detail="An account with this email already exists.",
+            )
+
+        user = User(
+            name=name,
+            email=email,
+            password=hash_password(
+                request.password
+            ),
         )
 
-    existing_user = (
-        db.query(User)
-        .filter(User.email == email)
-        .first()
-    )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
 
-    if existing_user:
+        return {
+            "status": "success",
+            "message": "Account created successfully.",
+            "user": {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+            },
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+
+        db.rollback()
+
+        print("ERROR in /signup:")
+        print(str(e))
+
         raise HTTPException(
-            status_code=409,
-            detail="An account with this email already exists.",
+            status_code=500,
+            detail="Unable to create account.",
         )
-
-    user = User(
-        name=name,
-        email=email,
-        password=hash_password(
-            request.password
-        ),
-    )
-
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-
-    return {
-        "status": "success",
-        "message": "Account created successfully.",
-        "user": {
-            "id": user.id,
-            "name": user.name,
-            "email": user.email,
-        },
-    }
 
 
 # ============================================================
@@ -241,42 +252,57 @@ def login(
     db: Session = Depends(get_db),
 ):
 
-    email = request.email.lower().strip()
+    try:
 
-    user = (
-        db.query(User)
-        .filter(User.email == email)
-        .first()
-    )
+        email = request.email.lower().strip()
 
-    if not user:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid email or password.",
+        user = (
+            db.query(User)
+            .filter(User.email == email)
+            .first()
         )
 
-    if not verify_password(
-        request.password,
-        user.password,
-    ):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid email or password.",
-        )
+        if not user:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid email or password.",
+            )
 
-    return {
-        "status": "success",
-        "message": "Login successful.",
-        "user": {
-            "id": user.id,
-            "name": user.name,
-            "email": user.email,
-        },
-    }
+        if not verify_password(
+            request.password,
+            user.password,
+        ):
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid email or password.",
+            )
+
+        return {
+            "status": "success",
+            "message": "Login successful.",
+            "user": {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+            },
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+
+        print("ERROR in /login:")
+        print(str(e))
+
+        raise HTTPException(
+            status_code=500,
+            detail="Login failed.",
+        )
 
 
 # ============================================================
-# CHAT
+# CHAT REQUEST
 # ============================================================
 
 class ChatRequest(BaseModel):
@@ -409,22 +435,17 @@ async def analyze_water(
             ),
             {
                 "user_id": user_id,
-
                 "created_at": datetime.now(),
-
                 "sample_data": json.dumps(
                     sample_data,
                     default=str,
                 ),
-
                 "prediction": str(
                     prediction_label
                 ),
-
                 "confidence": float(
                     confidence
                 ),
-
                 "treatment": json.dumps(
                     treatment,
                     default=str,
@@ -435,9 +456,7 @@ async def analyze_water(
         db.commit()
 
         # ----------------------------------------------------
-        # IMPORTANT:
-        # Return the exact structures needed by
-        # AnalysisResult.jsx
+        # Return exact structures needed by frontend
         # ----------------------------------------------------
 
         return {
@@ -455,8 +474,7 @@ async def analyze_water(
                 "confidence": confidence,
             },
 
-            # Also provide simple versions for
-            # frontend compatibility
+            # Frontend compatibility
             "predicted_class": prediction_label,
             "confidence": confidence,
 
@@ -478,6 +496,9 @@ async def analyze_water(
             # Timestamp
             "created_at": datetime.now().isoformat(),
         }
+
+    except HTTPException:
+        raise
 
     except Exception as e:
 
@@ -517,8 +538,7 @@ def get_history(
         ensure_history_table(db)
 
         # ----------------------------------------------------
-        # IMPORTANT:
-        # Each user sees ONLY their own history.
+        # Each user sees only their own history
         # ----------------------------------------------------
 
         if user_id is not None:
@@ -614,25 +634,19 @@ def get_history(
             # ------------------------------------------------
 
             if (
-                "critical"
-                in prediction_lower
-                or "unsafe"
-                in prediction_lower
-                or "contaminated"
-                in prediction_lower
+                "critical" in prediction_lower
+                or "unsafe" in prediction_lower
+                or "contaminated" in prediction_lower
             ):
 
                 status = "Critical"
 
             elif (
-                "treatment"
-                in prediction_lower
-                or "poor"
-                in prediction_lower
-                or "warning"
-                in prediction_lower
-                or "moderate"
-                in prediction_lower
+                "treatment" in prediction_lower
+                or "poor" in prediction_lower
+                or "warning" in prediction_lower
+                or "moderate" in prediction_lower
+                or "marginal" in prediction_lower
             ):
 
                 status = "Needs Treatment"
@@ -687,6 +701,9 @@ def get_history(
             "analyses": analyses,
         }
 
+    except HTTPException:
+        raise
+
     except Exception as e:
 
         print(
@@ -711,29 +728,33 @@ def chat(
 ):
 
     context = request.context or {}
+    question = (request.question or "").strip()
+    question_lower = question.lower()
 
     prompt = f"""
 You are Aqua Assistant for the Aqua XAI water-quality analysis system.
 
-Answer only questions related to water quality, water-quality analysis,
-machine learning, SHAP, treatment recommendations, and the current analysis.
+Answer only questions related to water quality,
+water-quality analysis, machine learning, SHAP/XAI,
+treatment recommendations, and the current analysis.
 
 User question:
 
-{request.question}
+{question}
 
 Current analysis context:
 
 {context}
 
 Do not invent numerical values.
-
 Do not invent SHAP values.
-
 Use the supplied analysis context when available.
-
 Keep the answer clear and concise.
 """
+
+    # ========================================================
+    # TRY OLLAMA
+    # ========================================================
 
     try:
 
@@ -759,26 +780,206 @@ Keep the answer clear and concise.
             },
         )
 
-        answer = response[
-            "message"
-        ][
-            "content"
-        ].strip()
+        answer = (
+            response["message"]["content"]
+            .strip()
+        )
 
         return {
             "status": "success",
             "answer": answer,
+            "source": "ollama",
         }
 
-    except Exception as e:
+    except Exception as ollama_error:
 
         print(
-            "ERROR in /chat:"
+            "Ollama unavailable. "
+            "Using built-in Aqua Assistant fallback."
         )
 
-        print(str(e))
+        print(str(ollama_error))
 
-        raise HTTPException(
-            status_code=500,
-            detail=str(e),
+    # ========================================================
+    # BUILT-IN FALLBACK
+    # ========================================================
+
+    if (
+        "what is ph" in question_lower
+        or question_lower == "ph"
+    ):
+
+        answer = (
+            "pH indicates how acidic or alkaline water is. "
+            "A value around 7 is neutral. Values below 7 are "
+            "acidic and values above 7 are alkaline. Water "
+            "quality should be interpreted using all measured "
+            "parameters rather than pH alone."
         )
+
+    elif (
+        "dissolved oxygen" in question_lower
+        or question_lower == "what is do"
+        or "what is do?" in question_lower
+    ):
+
+        answer = (
+            "Dissolved oxygen is the amount of oxygen available "
+            "in water. It is important for aquatic organisms and "
+            "is an important indicator of water condition. Low "
+            "dissolved oxygen can be associated with pollution, "
+            "organic matter, or reduced aeration."
+        )
+
+    elif "nitrate" in question_lower:
+
+        answer = (
+            "Nitrate is an important nutrient-related water "
+            "quality parameter. Elevated nitrate can indicate "
+            "nutrient pollution from sources such as agricultural "
+            "runoff or wastewater and may contribute to "
+            "eutrophication."
+        )
+
+    elif "ammonia" in question_lower:
+
+        answer = (
+            "Ammonia is an important water-quality parameter. "
+            "Elevated ammonia can be harmful to aquatic life and "
+            "may indicate wastewater or organic pollution. Its "
+            "effect also depends on conditions such as pH and "
+            "temperature."
+        )
+
+    elif (
+        "shap" in question_lower
+        or "explain prediction" in question_lower
+        or "explain my prediction" in question_lower
+    ):
+
+        answer = (
+            "SHAP is used in AquaXAI to explain a model prediction. "
+            "It identifies which input features contributed most "
+            "to the predicted water-quality class. Larger absolute "
+            "SHAP values indicate stronger influence on that "
+            "prediction."
+        )
+
+    elif (
+        "treatment" in question_lower
+        or "improve water" in question_lower
+        or "how to treat" in question_lower
+    ):
+
+        treatment = context.get(
+            "recommended_actions"
+        )
+
+        if treatment:
+
+            answer = (
+                "The recommendations for the current analysis "
+                "are shown in the Treatment/Recommendations section. "
+                "They are based on the measured water-quality "
+                "parameters and the treatment rules used by AquaXAI."
+            )
+
+        else:
+
+            answer = (
+                "Treatment should be selected according to the "
+                "specific water-quality parameters that require "
+                "attention. Check the Recommendations section "
+                "of the current analysis."
+            )
+
+    elif (
+        "prediction" in question_lower
+        or "result" in question_lower
+        or "what is my result" in question_lower
+    ):
+
+        prediction = (
+            context.get("prediction")
+            or context.get("predicted_class")
+        )
+
+        confidence = context.get(
+            "confidence"
+        )
+
+        # Support nested prediction object too.
+        if isinstance(
+            prediction,
+            dict
+        ):
+
+            confidence = (
+                prediction.get("confidence")
+                if prediction.get("confidence") is not None
+                else confidence
+            )
+
+            prediction = (
+                prediction.get("label")
+                or prediction.get("prediction")
+            )
+
+        if prediction:
+
+            answer = (
+                f"The current analysis prediction is "
+                f"{prediction}."
+            )
+
+            if confidence is not None:
+
+                answer += (
+                    f" The model confidence is "
+                    f"{confidence}%."
+                )
+
+        else:
+
+            answer = (
+                "Please open an analysis result first "
+                "so I can interpret the current prediction."
+            )
+
+    elif (
+        "confidence" in question_lower
+        or "accuracy" in question_lower
+    ):
+
+        confidence = context.get(
+            "confidence"
+        )
+
+        if confidence is not None:
+
+            answer = (
+                f"The current prediction confidence is "
+                f"{confidence}%."
+            )
+
+        else:
+
+            answer = (
+                "The model confidence is displayed with "
+                "the prediction on the analysis result page."
+            )
+
+    else:
+
+        answer = (
+            "I can help you understand pH, dissolved oxygen, "
+            "nitrate, ammonia, water-quality predictions, SHAP "
+            "explanations, confidence, and treatment "
+            "recommendations. Ask me about any of these topics."
+        )
+
+    return {
+        "status": "success",
+        "answer": answer,
+        "source": "local_fallback",
+    }
